@@ -29,9 +29,9 @@ as the three commands above, plus "Include Previous Runners-Up" (see below).
 
 Voting (via DM to the bot):
     Reply with up to 3 lines, most preferred first, e.g.:
-        1. Song A
-        2. Song B
-        3. Song C
+        1. Thing A
+        2. Thing B
+        3. Thing C
     Any leading number/letter followed by "." ")" "]" or "}" is stripped.
     Matching is case-insensitive. Replying with just "abstain" abstains.
 
@@ -252,7 +252,7 @@ class VotingCog(commands.Cog, name="Voting"):
         return (
             f"🗳️ Vote for **#{session.voice_channel.name}**!\n\n"
             "Reply with up to 3 lines, your top pick first, e.g.:\n"
-            "1. Song A\n2. Song B\n3. Song C\n\n"
+            "1. Thing A\n2. Thing B\n3. Thing C\n\n"
             "Leading numbers/letters followed by a full stop or bracket "
             "(like \"1)\" or \"a.\") are ignored, so plain lines work too.\n\n"
             "Don't want to vote this round? Just reply with `abstain`."
