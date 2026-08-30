@@ -134,7 +134,7 @@ python main.py
 If everything is set up correctly, you'll see a log line like:
 
 ```
-Logged in as My Music Bot#1234 (id: ...)
+Logged in as My Bot#1234 (id: ...)
 Bot is ready. Waiting for commands...
 ```
 

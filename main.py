@@ -41,6 +41,7 @@ bot.help_command = PrettyHelpCommand()
 #   EXTENSIONS = ["music_cog", "voting_cog"]
 EXTENSIONS = [
     "music_cog",
+    "voting_cog",
 ]
 
 
