@@ -14,11 +14,12 @@ voice channel.
 | `!help`           | Lists all commands, grouped by feature module.                        |
 
 **Bot responses:** the bot replies directly to the message that triggered
-it, rather than posting a separate message. When you queue a single video
-behind others, the confirmation includes a **"Skip to this"** button — click
-it to jump the queue straight to that track (dropping everything queued
-ahead of it). This isn't offered for playlist entries, since a 25-track
-playlist would need 25 buttons, which Discord doesn't support on one message.
+it for confirmations and errors. Playback status itself lives in a single,
+**live-updating panel message** per server — showing what's playing and
+what's queued next — which gets edited in place as tracks change, rather
+than posting a new message every time a track starts. The panel has four
+buttons: **Skip**, **Pause/Resume**, **Restart** (replays the current track
+from the beginning), and **Stop**.
 
 **Supported link features:**
 - Timestamps: `?t=90`, `?t=43s`, `?t=1h2m3s`, or `?t=1:30` will start playback at that point in the video.
@@ -134,7 +135,7 @@ python main.py
 If everything is set up correctly, you'll see a log line like:
 
 ```
-Logged in as My Bot#1234 (id: ...)
+Logged in as My Music Bot#1234 (id: ...)
 Bot is ready. Waiting for commands...
 ```
 

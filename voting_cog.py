@@ -43,6 +43,17 @@ Runners-up history:
     1 in a per-guild JSON file on disk (data/vote_history/<guild_id>.json).
     The winner's streak (if any) is cleared.
 
+    If a round ends in a tie instead, anyone who got votes but wasn't part
+    of the tie has already lost outright, so their streak is bumped right
+    then -- otherwise those first-round votes would be lost once the
+    tie-break narrows the field down to just the tied nominees. The tied
+    nominees themselves stay untouched until the tie-break resolves (bumped
+    if they lose it, cleared if they win it, or bumped again if it ties yet
+    again).
+
+!start_vote requires at least 3 people in the voice channel. With only 1 or
+2, a vote doesn't add much over just talking it out.
+
     Clicking "Include Previous Runners-Up" on a live vote loads that file,
     posts its contents as a reply to the live-updating message, and, for
     this round only, adds each nominee's streak as bonus points on top of
@@ -121,7 +132,7 @@ class VoteSession:
 
 
 class VotingCog(commands.Cog, name="Voting"):
-    """Run ranked-choice votes among people in a voice channel."""
+    """Run ranked-choice votes among people in a voice channel. Needs 3+ people — smaller groups should just talk it out."""
 
     COG_EMOJI = "🗳️"
 
@@ -286,6 +297,24 @@ class VotingCog(commands.Cog, name="Voting"):
                 history[nominee] = history.get(nominee, 0) + 1
         self.history.save(guild_id, history)
 
+    def _bump_non_tied(self, guild_id: int, points: Dict[str, int], tied: List[str]) -> None:
+        """Called the moment a tie is detected. Everyone who got votes this
+        round but isn't part of the tie has already lost outright, so their
+        streak bumps by 1 now -- otherwise that round's votes would be lost
+        once the tie-break narrows things down to just the tied nominees.
+        The tied nominees themselves are left alone; they're still live and
+        get resolved (bumped or cleared) once the tie-break concludes."""
+        still_live = set(tied)
+        history = self.history.load(guild_id)
+        changed = False
+        for nominee in points:
+            if nominee in still_live:
+                continue
+            history[nominee] = history.get(nominee, 0) + 1
+            changed = True
+        if changed:
+            self.history.save(guild_id, history)
+
     async def _finish_session(self, guild: discord.Guild, session: VoteSession, cancelled: bool = False):
         await self._update_tracking_message(session, finished=True, cancelled=cancelled)
         self.active_votes.pop(guild.id, None)
@@ -340,6 +369,7 @@ class VotingCog(commands.Cog, name="Voting"):
         winners = [name for name, score in ranked if score == top_score]
 
         if len(winners) > 1:
+            self._bump_non_tied(guild.id, points, winners)
             await self._start_runoff(session, winners, send_result)
             return None
 
@@ -431,6 +461,9 @@ class VotingCog(commands.Cog, name="Voting"):
         Snapshots who's currently in the channel, then DMs each person asking
         for their ranked picks. Use !end_vote (or the button) once everyone's
         responded.
+
+        Requires at least 3 people in the channel. With just 1 or 2 of you,
+        skip the ceremony and talk it out directly.
         """
         if ctx.guild.id in self.active_votes:
             await ctx.reply(
@@ -446,8 +479,12 @@ class VotingCog(commands.Cog, name="Voting"):
         voice_channel = ctx.author.voice.channel
         members = [m for m in voice_channel.members if not m.bot]
 
-        if len(members) < 2:
-            await ctx.reply("Need at least 2 people in the voice channel to start a vote.", mention_author=False)
+        if len(members) < 3:
+            await ctx.reply(
+                "Need at least 3 people in the voice channel to hold a vote — "
+                "with only 1 or 2 of you, just talk it out instead!",
+                mention_author=False,
+            )
             return
 
         participants = {m.id: Participant(member=m) for m in members}

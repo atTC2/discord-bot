@@ -16,8 +16,8 @@ Commands:
 
 Playback status is shown in a single, live-updating "panel" message per
 server (edited in place as tracks change) rather than a new message per
-track, with a Skip button attached. See COG_GUIDE.md for how this cog's
-docstrings/emoji feed into !help.
+track. The panel has Skip / Pause-Resume / Restart / Stop buttons.
+See COG_GUIDE.md for how this cog's docstrings/emoji feed into !help.
 
 Requires FFmpeg on PATH. See README.md for setup instructions.
 """
@@ -86,6 +86,11 @@ class GuildMusicState:
         # messages every time the queue advances.
         self.panel_message: discord.Message | None = None
         self.panel_view: discord.ui.View | None = None
+        # Incremented every time a new source actually starts playing (via
+        # play_next, restart, etc). Lets a stale after_playback callback from
+        # a source we've since superseded (e.g. restart) recognize it's stale
+        # and avoid incorrectly auto-advancing the queue.
+        self.play_token: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -215,16 +220,37 @@ async def extract_playlist_entries(list_id: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 class NowPlayingView(discord.ui.View):
-    """A single Skip button attached to the live now-playing/up-next panel."""
+    """Skip / Pause-Resume / Restart / Stop buttons attached to the live panel."""
 
-    def __init__(self, cog: "MusicCog", guild_id: int):
+    def __init__(self, cog: "MusicCog", guild_id: int, is_paused: bool = False):
         super().__init__(timeout=None)
         self.cog = cog
         self.guild_id = guild_id
 
+        if is_paused:
+            self.pause_button.label = "Resume"
+            self.pause_button.emoji = "▶️"
+            self.pause_button.style = discord.ButtonStyle.success
+        else:
+            self.pause_button.label = "Pause"
+            self.pause_button.emoji = "⏸️"
+            self.pause_button.style = discord.ButtonStyle.secondary
+
     @discord.ui.button(label="Skip", style=discord.ButtonStyle.primary, emoji="⏭️")
     async def skip_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.cog.handle_skip_button(interaction, self.guild_id)
+
+    @discord.ui.button(label="Pause", style=discord.ButtonStyle.secondary, emoji="⏸️")
+    async def pause_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.cog.handle_pause_button(interaction, self.guild_id)
+
+    @discord.ui.button(label="Restart", style=discord.ButtonStyle.secondary, emoji="🔁")
+    async def restart_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.cog.handle_restart_button(interaction, self.guild_id)
+
+    @discord.ui.button(label="Stop", style=discord.ButtonStyle.danger, emoji="⏹️")
+    async def stop_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.cog.handle_stop_button(interaction, self.guild_id)
 
 
 # ---------------------------------------------------------------------------
@@ -248,6 +274,8 @@ class MusicCog(commands.Cog, name="Music"):
             self.guild_states[guild_id] = GuildMusicState()
         return self.guild_states[guild_id]
 
+    # -- Panel rendering -----------------------------------------------------
+
     def build_panel_embed(self, guild: discord.Guild, state: GuildMusicState) -> discord.Embed:
         """Builds the "Now Playing / Up Next" embed reflecting current state."""
         voice_client = guild.voice_client
@@ -259,8 +287,9 @@ class MusicCog(commands.Cog, name="Music"):
         if state.current_track:
             title = truncate(state.current_track.get("title") or state.current_track.get("video_id"))
             start_seconds = state.current_track.get("start_seconds")
+            paused_note = " (paused)" if voice_client and voice_client.is_paused() else ""
             suffix = f" (started at {start_seconds}s)" if start_seconds else ""
-            embed.add_field(name="▶️ Now Playing", value=f"{title}{suffix}", inline=False)
+            embed.add_field(name="▶️ Now Playing", value=f"{title}{suffix}{paused_note}", inline=False)
         else:
             embed.add_field(name="▶️ Now Playing", value="Nothing is currently playing.", inline=False)
 
@@ -286,55 +315,36 @@ class MusicCog(commands.Cog, name="Music"):
         if state.text_channel is None:
             return
 
+        voice_client = guild.voice_client
+        is_paused = bool(voice_client and voice_client.is_paused())
+
         embed = self.build_panel_embed(guild, state)
+        view = NowPlayingView(self, guild.id, is_paused=is_paused)
+        state.panel_view = view
 
         if state.panel_message is not None:
             try:
-                await state.panel_message.edit(embed=embed, view=state.panel_view)
+                await state.panel_message.edit(embed=embed, view=view)
                 return
             except discord.HTTPException:
                 state.panel_message = None  # deleted or inaccessible -- fall through to resend
 
-        view = NowPlayingView(self, guild.id)
-        state.panel_view = view
         state.panel_message = await state.text_channel.send(embed=embed, view=view)
 
-    async def handle_skip_button(self, interaction: discord.Interaction, guild_id: int):
-        guild = self.bot.get_guild(guild_id)
-        voice_client = guild.voice_client if guild else None
+    # -- Playback core --------------------------------------------------------
 
-        if voice_client is None or not voice_client.is_connected():
-            await interaction.response.send_message("I'm not connected to a voice channel anymore.", ephemeral=True)
-            return
-
-        if not voice_client.is_playing() and not voice_client.is_paused():
-            await interaction.response.send_message("Nothing is currently playing to skip.", ephemeral=True)
-            return
-
-        # Triggers the after_playback callback, which advances the queue and
-        # refreshes the panel automatically.
-        voice_client.stop()
-        await interaction.response.send_message("⏭️ Skipped.", ephemeral=True)
-
-    async def play_next(self, guild: discord.Guild, voice_client: discord.VoiceClient):
-        """Pops the next track off this guild's queue and plays it. Chains
-        itself via the `after=` callback so the queue plays through automatically."""
+    async def _start_track(self, guild: discord.Guild, voice_client: discord.VoiceClient, track: dict):
+        """Actually starts playing a track (used both for normal queue
+        advancement and for restarting the current track). Does NOT touch
+        the queue itself -- callers decide whether this track came from it."""
         state = self.get_state(guild.id)
-
-        if state.stopping:
-            return
-
-        if not state.queue:
-            state.current_track = None
-            await self.refresh_panel(guild)
-            return
-
-        track = state.queue.popleft()
         video_id = track["video_id"]
         start_seconds = track.get("start_seconds")
         video_url = f"https://www.youtube.com/watch?v={video_id}"
 
         state.current_track = track
+        state.play_token += 1
+        my_token = state.play_token
 
         try:
             stream_url, resolved_title = await extract_stream_url(video_url)
@@ -343,8 +353,9 @@ class MusicCog(commands.Cog, name="Music"):
             if state.text_channel:
                 label = track.get("title") or video_id
                 await state.text_channel.send(f"⚠️ Skipping a track I couldn't load ({label}): {e}")
-            state.current_track = None
-            await self.play_next(guild, voice_client)
+            if state.play_token == my_token:
+                state.current_track = None
+                await self.play_next(guild, voice_client)
             return
 
         track["title"] = resolved_title  # fill in the title now that we know it
@@ -358,8 +369,9 @@ class MusicCog(commands.Cog, name="Music"):
         def after_playback(error):
             if error:
                 logger.error(f"Playback error: {error}")
-            # This callback runs outside the event loop's thread, so hop back into it.
-            fut = asyncio.run_coroutine_threadsafe(self.play_next(guild, voice_client), self.bot.loop)
+            fut = asyncio.run_coroutine_threadsafe(
+                self._handle_playback_finished(guild, voice_client, my_token), self.bot.loop
+            )
             try:
                 fut.result()
             except Exception:
@@ -367,6 +379,137 @@ class MusicCog(commands.Cog, name="Music"):
 
         voice_client.play(source, after=after_playback)
         await self.refresh_panel(guild)
+
+    async def _handle_playback_finished(self, guild: discord.Guild, voice_client: discord.VoiceClient, token: int):
+        """Called when a source finishes/stops. Only auto-advances the queue
+        if no newer source (restart, another skip, etc.) has already taken
+        over since this one started."""
+        state = self.get_state(guild.id)
+        if state.stopping:
+            return
+        if token != state.play_token:
+            return  # stale callback from a source we've since superseded
+        await self.play_next(guild, voice_client)
+
+    async def play_next(self, guild: discord.Guild, voice_client: discord.VoiceClient):
+        """Pops the next track off this guild's queue and plays it."""
+        state = self.get_state(guild.id)
+
+        if state.stopping:
+            return
+
+        if not state.queue:
+            state.current_track = None
+            await self.refresh_panel(guild)
+            return
+
+        track = state.queue.popleft()
+        await self._start_track(guild, voice_client, track)
+
+    async def restart_current(self, guild: discord.Guild, voice_client: discord.VoiceClient) -> bool:
+        """Restarts the currently playing track from the beginning."""
+        state = self.get_state(guild.id)
+        track = state.current_track
+        if track is None:
+            return False
+
+        restarted_track = dict(track)
+        restarted_track["start_seconds"] = None  # restart = from the top, not the original t= timestamp
+
+        if voice_client.is_playing() or voice_client.is_paused():
+            voice_client.stop()
+
+        await self._start_track(guild, voice_client, restarted_track)
+        return True
+
+    async def stop_playback(self, guild: discord.Guild, voice_client: discord.VoiceClient) -> int:
+        """Stops playback, clears the queue, disconnects, and finalizes the
+        panel. Returns how many queued tracks were dropped."""
+        state = self.get_state(guild.id)
+        remaining = len(state.queue)
+        state.queue.clear()
+        state.current_track = None
+        state.stopping = True
+
+        voice_client.stop()
+        await voice_client.disconnect()
+
+        state.stopping = False
+
+        if state.panel_message is not None:
+            try:
+                stopped_embed = discord.Embed(title="🎵 Music Player", description="⏹️ Stopped.", color=discord.Color.red())
+                await state.panel_message.edit(embed=stopped_embed, view=None)
+            except discord.HTTPException:
+                pass
+            state.panel_message = None
+            state.panel_view = None
+
+        return remaining
+
+    # -- Button callbacks -----------------------------------------------------
+
+    async def handle_skip_button(self, interaction: discord.Interaction, guild_id: int):
+        guild = self.bot.get_guild(guild_id)
+        voice_client = guild.voice_client if guild else None
+
+        if voice_client is None or not voice_client.is_connected():
+            await interaction.response.send_message("I'm not connected to a voice channel anymore.", ephemeral=True)
+            return
+        if not voice_client.is_playing() and not voice_client.is_paused():
+            await interaction.response.send_message("Nothing is currently playing to skip.", ephemeral=True)
+            return
+
+        voice_client.stop()  # triggers _handle_playback_finished -> play_next -> panel refresh
+        await interaction.response.send_message("⏭️ Skipped.", ephemeral=True)
+
+    async def handle_pause_button(self, interaction: discord.Interaction, guild_id: int):
+        guild = self.bot.get_guild(guild_id)
+        voice_client = guild.voice_client if guild else None
+
+        if voice_client is None or not voice_client.is_connected():
+            await interaction.response.send_message("I'm not connected to a voice channel anymore.", ephemeral=True)
+            return
+
+        if voice_client.is_paused():
+            voice_client.resume()
+            await interaction.response.send_message("▶️ Resumed.", ephemeral=True)
+        elif voice_client.is_playing():
+            voice_client.pause()
+            await interaction.response.send_message("⏸️ Paused.", ephemeral=True)
+        else:
+            await interaction.response.send_message("Nothing is currently playing.", ephemeral=True)
+            return
+
+        await self.refresh_panel(guild)
+
+    async def handle_restart_button(self, interaction: discord.Interaction, guild_id: int):
+        guild = self.bot.get_guild(guild_id)
+        voice_client = guild.voice_client if guild else None
+        state = self.get_state(guild_id)
+
+        if voice_client is None or not voice_client.is_connected():
+            await interaction.response.send_message("I'm not connected to a voice channel anymore.", ephemeral=True)
+            return
+        if state.current_track is None:
+            await interaction.response.send_message("Nothing is currently playing to restart.", ephemeral=True)
+            return
+
+        await interaction.response.send_message("🔁 Restarting the current track.", ephemeral=True)
+        await self.restart_current(guild, voice_client)
+
+    async def handle_stop_button(self, interaction: discord.Interaction, guild_id: int):
+        guild = self.bot.get_guild(guild_id)
+        voice_client = guild.voice_client if guild else None
+
+        if voice_client is None or not voice_client.is_connected():
+            await interaction.response.send_message("I'm not connected to a voice channel anymore.", ephemeral=True)
+            return
+
+        await interaction.response.send_message("⏹️ Stopping...", ephemeral=True)
+        await self.stop_playback(guild, voice_client)
+
+    # -- Commands ---------------------------------------------------------
 
     @commands.command(name="play")
     async def play(self, ctx: commands.Context, url: str = None):
@@ -455,25 +598,7 @@ class MusicCog(commands.Cog, name="Music"):
             await ctx.reply("I'm not currently in a voice channel.", mention_author=False)
             return
 
-        state = self.get_state(ctx.guild.id)
-        remaining = len(state.queue)
-        state.queue.clear()
-        state.current_track = None
-        state.stopping = True
-
-        voice_client.stop()
-        await voice_client.disconnect()
-
-        state.stopping = False
-
-        if state.panel_message is not None:
-            try:
-                stopped_embed = discord.Embed(title="🎵 Music Player", description="⏹️ Stopped.", color=discord.Color.red())
-                await state.panel_message.edit(embed=stopped_embed, view=None)
-            except discord.HTTPException:
-                pass
-            state.panel_message = None
-            state.panel_view = None
+        remaining = await self.stop_playback(ctx.guild, voice_client)
 
         if remaining > 0:
             track_word = "track" if remaining == 1 else "tracks"
@@ -495,9 +620,6 @@ class MusicCog(commands.Cog, name="Music"):
             await ctx.reply("Nothing is currently playing to skip.", mention_author=False)
             return
 
-        # Stopping the current source triggers the after_playback callback,
-        # which automatically advances to the next queued track (if any)
-        # and refreshes the panel.
         voice_client.stop()
         await ctx.reply("⏭️ Skipped.", mention_author=False)
 
