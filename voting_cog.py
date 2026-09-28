@@ -6,6 +6,9 @@ existing bot, following the bot's cog conventions (see cog_guide.md):
 name= on the Cog, docstrings for !help, COG_EMOJI, ctx.reply(...,
 mention_author=False) for command responses, and cog_command_error.
 
+Dependency: PyYAML (`pip install pyyaml`) for the config file. Everything
+else here only needs discord.py and the standard library.
+
 Integration:
     # main.py
     EXTENSIONS = [
@@ -29,11 +32,12 @@ as the three commands above, plus "Include Previous Runners-Up" (see below).
 
 Voting (via DM to the bot):
     Reply with up to 3 lines, most preferred first, e.g.:
-        1. Thing A
-        2. Thing B
-        3. Thing C
+        1. Song A
+        2. Song B
+        3. Song C
     Any leading number/letter followed by "." ")" "]" or "}" is stripped.
-    Matching is case-insensitive. Replying with just "abstain" abstains.
+    Matching is case-insensitive. Each vote DM also carries an Abstain
+    button for anyone who doesn't want to vote that round.
 
 Scoring: 1st line = 3 points, 2nd line = 2 points, 3rd line = 1 point.
 
@@ -51,23 +55,61 @@ Runners-up history:
     if they lose it, cleared if they win it, or bumped again if it ties yet
     again).
 
-!start_vote requires at least 3 people in the voice channel. With only 1 or
-2, a vote doesn't add much over just talking it out.
-
     Clicking "Include Previous Runners-Up" on a live vote loads that file,
     posts its contents as a reply to the live-updating message, and, for
     this round only, adds each nominee's streak as bonus points on top of
     their normal score -- but only for nominees someone actually votes for
     this round. Nominees nobody votes for are left untouched either way.
+
+!start_vote requires at least 3 people in the voice channel. With only 1 or
+2, a vote doesn't add much over just talking it out.
+
+Config file (voting_config.yaml, written next to this file on first run,
+re-read at the start of every command so edits need no restart):
+
+    features:
+      sound_effects_enabled -- off by default. See "Sound effects" below.
+
+    lookups:
+    Maps a short vote key (what people actually type/vote, e.g. "oam") to
+    a full display title and an optional url. Wherever a nominee is shown
+    in results, the tie announcement, or the runner-up history list, a
+    configured key is swapped for its title; keys with no entry just show
+    as typed. When url is set, that title becomes a clickable link (e.g.
+    "Age of Mythology" linking to its Steam store page) -- those messages
+    are sent as embeds specifically so the link renders, since Discord
+    only supports markdown links `[text](url)` inside embeds/interaction
+    responses, never in plain message content. Use an ordinary http(s)
+    page (a store page, a Spotify track, a YouTube video...) rather than
+    an app-specific protocol like steam:// -- Discord no longer renders
+    custom protocols as clickable links at all, but a plain web link works
+    everywhere, and most such pages show their own "Play"/"Launch" button
+    once you're signed in anyway.
+
+Sound effects:
+    Off by default (features.sound_effects_enabled: false in
+    voting_config.yaml) until you've actually got clips to play. Once
+    enabled: drop your own audio clips into a "sounds" folder next to this
+    file (voting_started / voting_finished / voting_cancelled, any ffmpeg-
+    readable format) and the bot will connect to the voice channel being
+    voted in, play the clip once, and disconnect. A README.txt is written
+    into that folder automatically the first time this cog runs. If a clip
+    is missing, that sting is silently skipped. If the bot is already
+    playing something in that guild (e.g. music), the sting is skipped
+    entirely rather than interrupting it -- discord.py only supports one
+    audio stream per voice connection, so a voice line and music can't play
+    at once on the same connection.
 """
 
+import asyncio
 import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Awaitable, Callable, Dict, List, Optional
+from typing import Awaitable, Callable, Dict, List, Optional, Union
 
 import discord
+import yaml
 from discord.ext import commands
 
 # Matches a leading enumerator like "1.", "1)", "a.", "A)", "iii}" etc.
@@ -77,11 +119,176 @@ _WEIGHTS = [3, 2, 1]
 
 _HISTORY_DIR = Path(__file__).resolve().parent / "data" / "vote_history"
 
-SendFn = Callable[[str], Awaitable[None]]
+_CONFIG_PATH = Path(__file__).resolve().parent / "voting_config.yaml"
+_CONFIG_TEMPLATE = """\
+# Voting cog configuration.
+# Edit this file directly and it takes effect on the next !start_vote or
+# !end_vote - no bot restart needed.
+
+features:
+  # Dramatic start/finish/cancel voice lines (see sounds/README.txt). Leave
+  # this off until you've actually dropped clips in there - flipping it on
+  # with no clips present just means nothing plays, but there's no point
+  # turning it on early.
+  sound_effects_enabled: false
+
+# Lookup table: short vote keys -> full title (+ optional web link).
+# People still vote using the short key (e.g. "oam") - results, the tie
+# announcement, and the runner-up history list all show the full title
+# instead, as a clickable link whenever a url is given.
+#
+# Use an ordinary http(s) page here (a store page, a Spotify track, a
+# YouTube video...) rather than an app-specific protocol like steam:// -
+# Discord no longer renders custom protocols as clickable links at all,
+# but a plain web link works everywhere, and most of these pages show
+# their own "Play"/"Launch" button once you're signed in anyway.
+#
+# url is optional; omit it for a plain title with no link.
+lookups:
+  oam:
+    title: "Age of Mythology"
+    url: "https://store.steampowered.com/app/266840/Age_of_Mythology_Extended_Edition/"
+"""
+
+# Drop your own audio files here, named voting_started/voting_finished/
+# voting_cancelled with any ffmpeg-readable extension (mp3, wav, ogg, m4a,
+# flac...). If a file's missing, that sting is just silently skipped.
+_SOUNDS_DIR = Path(__file__).resolve().parent / "sounds"
+_SOUND_BASENAMES = {
+    "start": "voting_started",
+    "end": "voting_finished",
+    "cancel": "voting_cancelled",
+}
+_SOUND_EXTENSIONS = (".mp3", ".wav", ".ogg", ".m4a", ".flac")
+_SOUNDS_README = """\
+Drop dramatic sound effects here for the voting cog to play.
+
+Files are matched by name (any extension ffmpeg understands: mp3, wav,
+ogg, m4a, flac...):
+
+    voting_started.mp3    - played when !start_vote kicks off
+    voting_finished.mp3   - played when a vote concludes with a result
+    voting_cancelled.mp3  - played when !cancel_vote is used
+
+If a file isn't present, that sting is just skipped silently - nothing
+breaks. The bot connects to the voice channel being voted in, plays the
+clip once, and disconnects again, but ONLY if it isn't already playing
+something else in that server (e.g. music) - it will never interrupt or
+talk over an existing stream.
+"""
+
+SendFn = Callable[[Union[str, discord.Embed]], Awaitable[None]]
 
 
 def _strip_enumeration(line: str) -> str:
     return _ENUM_RE.sub("", line).strip()
+
+
+@dataclass
+class LookupEntry:
+    title: str
+    url: Optional[str] = None
+
+
+class VotingConfig:
+    """Loads voting_config.yaml: the sound-effects feature toggle and the
+    key -> title/link lookup table. Cheap to re-read, so callers reload it
+    at the start of each command rather than caching forever - edits take
+    effect on the next vote with no bot restart."""
+
+    def __init__(self, path: Path):
+        self.path = path
+        if not self.path.exists():
+            self.path.write_text(_CONFIG_TEMPLATE, encoding="utf-8")
+        self.sound_effects_enabled: bool = False
+        self.lookups: Dict[str, LookupEntry] = {}
+        self.reload()
+
+    def reload(self) -> None:
+        try:
+            with self.path.open("r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+        except (OSError, yaml.YAMLError):
+            data = {}
+
+        features = data.get("features") or {}
+        self.sound_effects_enabled = bool(features.get("sound_effects_enabled", False))
+
+        lookups: Dict[str, LookupEntry] = {}
+        for key, value in (data.get("lookups") or {}).items():
+            if not isinstance(value, dict) or "title" not in value:
+                continue
+            lookups[str(key).lower()] = LookupEntry(
+                title=str(value["title"]),
+                url=value.get("url"),
+            )
+        self.lookups = lookups
+
+    def lookup(self, key: str) -> Optional[LookupEntry]:
+        return self.lookups.get(key.lower())
+
+
+class SoundEffects:
+    """Finds and plays short "sting" audio clips (vote started/finished/
+    cancelled) in a guild's voice channel, connecting and disconnecting just
+    for the clip. Never interrupts audio the bot is already playing (e.g.
+    music) - if the guild's voice client is already playing something, the
+    sting is skipped entirely."""
+
+    def __init__(self, bot: commands.Bot, directory: Path):
+        self.bot = bot
+        self.directory = directory
+        directory.mkdir(parents=True, exist_ok=True)
+        readme = directory / "README.txt"
+        if not any(directory.iterdir()):
+            readme.write_text(_SOUNDS_README, encoding="utf-8")
+
+    def _find(self, key: str) -> Optional[Path]:
+        base = _SOUND_BASENAMES.get(key)
+        if base is None:
+            return None
+        for ext in _SOUND_EXTENSIONS:
+            candidate = self.directory / f"{base}{ext}"
+            if candidate.exists():
+                return candidate
+        return None
+
+    def fire(self, guild: discord.Guild, voice_channel: discord.VoiceChannel, key: str) -> None:
+        """Schedules the sting in the background; never awaited/blocking."""
+        path = self._find(key)
+        if path is None:
+            return
+        self.bot.loop.create_task(self._play(guild, voice_channel, path))
+
+    async def _play(self, guild: discord.Guild, voice_channel: discord.VoiceChannel, path: Path) -> None:
+        vc = guild.voice_client
+
+        if vc is not None and vc.is_playing():
+            return  # already playing something (e.g. music) - never step on it
+
+        connected_here = False
+        try:
+            if vc is None:
+                vc = await voice_channel.connect()
+                connected_here = True
+            elif vc.channel.id != voice_channel.id:
+                await vc.move_to(voice_channel)
+
+            finished = asyncio.Event()
+
+            def _after(_error):
+                self.bot.loop.call_soon_threadsafe(finished.set)
+
+            vc.play(discord.FFmpegPCMAudio(str(path)), after=_after)
+            await asyncio.wait_for(finished.wait(), timeout=30)
+        except (discord.ClientException, discord.DiscordException, asyncio.TimeoutError, OSError):
+            pass
+        finally:
+            if connected_here and vc is not None:
+                try:
+                    await vc.disconnect()
+                except discord.ClientException:
+                    pass
 
 
 class HistoryStore:
@@ -140,6 +347,8 @@ class VotingCog(commands.Cog, name="Voting"):
         self.bot = bot
         self.active_votes: Dict[int, VoteSession] = {}
         self.history = HistoryStore(_HISTORY_DIR)
+        self.sounds = SoundEffects(bot, _SOUNDS_DIR)
+        self.config = VotingConfig(_CONFIG_PATH)
 
     # ---------- error handling ----------
 
@@ -147,6 +356,31 @@ class VotingCog(commands.Cog, name="Voting"):
         await ctx.reply(f"⚠️ Something went wrong: {error}", mention_author=False)
 
     # ---------- helpers ----------
+
+    def _display_nominee(self, key: str, as_markdown_link: bool = False) -> str:
+        """Turns a raw vote key into its configured display form. Falls
+        back to the raw key when there's no lookup entry for it. Masked
+        markdown links only render in embeds/interaction responses, never
+        in plain message content, so as_markdown_link should only be True
+        when the caller is about to put this into an Embed."""
+        entry = self.config.lookup(key)
+        if entry is None:
+            return key
+        if as_markdown_link and entry.url:
+            return f"[{entry.title}]({entry.url})"
+        return entry.title
+
+    async def _reply_payload(self, ctx: commands.Context, payload: Union[str, discord.Embed]) -> None:
+        if isinstance(payload, discord.Embed):
+            await ctx.reply(embed=payload, mention_author=False)
+        else:
+            await ctx.reply(payload, mention_author=False)
+
+    async def _channel_payload(self, channel: discord.abc.Messageable, payload: Union[str, discord.Embed]) -> None:
+        if isinstance(payload, discord.Embed):
+            await channel.send(embed=payload)
+        else:
+            await channel.send(payload)
 
     def _find_participant(self, user_id: int):
         for session in self.active_votes.values():
@@ -184,11 +418,17 @@ class VotingCog(commands.Cog, name="Voting"):
         lines = []
         for p in session.participants.values():
             if finished:
-                icon = "➖" if p.status == "pending" else "✅"
-                label = "no response" if p.status == "pending" else p.status
+                icon, label = {
+                    "pending": ("➖", "no response"),
+                    "voted": ("✅", "voted"),
+                    "abstained": ("🙅", "abstained"),
+                }[p.status]
             else:
-                icon = "✅" if p.status != "pending" else "❌"
-                label = "not voted" if p.status == "pending" else p.status
+                icon, label = {
+                    "pending": ("❌", "not voted"),
+                    "voted": ("✅", "voted"),
+                    "abstained": ("🙅", "abstained"),
+                }[p.status]
             lines.append(f"{icon} {p.member.display_name} — {label}")
         embed.add_field(name="Status", value="\n".join(lines) or "No participants", inline=False)
 
@@ -252,22 +492,36 @@ class VotingCog(commands.Cog, name="Voting"):
 
     def _format_prompt(self, session: VoteSession) -> str:
         if session.runoff_options:
-            options_list = "\n".join(f"- {opt}" for opt in session.runoff_options)
+            options_list = "\n".join(
+                f"- {opt}" + (f" — {title}" if (title := self._display_nominee(opt)) != opt else "")
+                for opt in session.runoff_options
+            )
             return (
                 f"🤝 Tie-breaker vote for **#{session.voice_channel.name}**!\n\n"
-                f"Rank these in order of preference (top pick first):\n{options_list}\n\n"
+                f"Rank these in order of preference (top pick first), using the key on the left:\n{options_list}\n\n"
                 "One per line. Leading numbers/letters followed by a full stop or "
                 "bracket (like \"1)\" or \"a.\") are ignored.\n\n"
-                "Don't want to vote? Just reply with `abstain`."
+                "Don't want to vote? Tap the Abstain button below."
             )
         return (
             f"🗳️ Vote for **#{session.voice_channel.name}**!\n\n"
             "Reply with up to 3 lines, your top pick first, e.g.:\n"
-            "1. Thing A\n2. Thing B\n3. Thing C\n\n"
+            "1. Song A\n2. Song B\n3. Song C\n\n"
             "Leading numbers/letters followed by a full stop or bracket "
             "(like \"1)\" or \"a.\") are ignored, so plain lines work too.\n\n"
-            "Don't want to vote this round? Just reply with `abstain`."
+            "Don't want to vote this round? Tap the Abstain button below."
         )
+
+    def _build_abstain_view(self) -> discord.ui.View:
+        view = discord.ui.View(timeout=None)
+        button = discord.ui.Button(label="Abstain", style=discord.ButtonStyle.red)
+
+        async def callback(interaction: discord.Interaction):
+            await self._on_abstain_button(interaction)
+
+        button.callback = callback
+        view.add_item(button)
+        return view
 
     def _tally(self, session: VoteSession) -> Dict[str, int]:
         points: Dict[str, int] = {}
@@ -318,11 +572,16 @@ class VotingCog(commands.Cog, name="Voting"):
     async def _finish_session(self, guild: discord.Guild, session: VoteSession, cancelled: bool = False):
         await self._update_tracking_message(session, finished=True, cancelled=cancelled)
         self.active_votes.pop(guild.id, None)
+        if self.config.sound_effects_enabled:
+            self.sounds.fire(guild, session.voice_channel, "cancel" if cancelled else "end")
 
     async def _start_runoff(self, session: VoteSession, tied_nominees: List[str], send_result: SendFn):
-        await send_result(
-            f"🤝 It's a tie between **{', '.join(tied_nominees)}**! Sending everyone a tie-breaker vote."
+        display_names = ", ".join(self._display_nominee(n, as_markdown_link=True) for n in tied_nominees)
+        embed = discord.Embed(
+            description=f"🤝 It's a tie between **{display_names}**! Sending everyone a tie-breaker vote.",
+            color=discord.Color.orange(),
         )
+        await send_result(embed)
 
         session.runoff_options = tied_nominees
         for p in session.participants.values():
@@ -334,7 +593,7 @@ class VotingCog(commands.Cog, name="Voting"):
         failed_dms = []
         for p in session.participants.values():
             try:
-                await p.member.send(self._format_prompt(session))
+                await p.member.send(self._format_prompt(session), view=self._build_abstain_view())
             except discord.Forbidden:
                 failed_dms.append(p.member.display_name)
 
@@ -349,6 +608,8 @@ class VotingCog(commands.Cog, name="Voting"):
         session = self.active_votes.get(guild.id)
         if session is None:
             return "There's no active vote in this server."
+
+        self.config.reload()
 
         total = len(session.participants)
         ready = sum(1 for p in session.participants.values() if p.status != "pending")
@@ -375,11 +636,18 @@ class VotingCog(commands.Cog, name="Voting"):
 
         self._update_history(guild.id, points, winners[0])
 
-        lines = [f"**Winner: {winners[0]}** ({top_score} points)", "", "**Points:**"]
-        for name, score in ranked:
-            lines.append(f"- {name}: {score}")
+        winner_display = self._display_nominee(winners[0], as_markdown_link=True)
+        points_text = "\n".join(
+            f"{self._display_nominee(name, as_markdown_link=True)} — {score}" for name, score in ranked
+        )
+        embed = discord.Embed(
+            title="🏆 Vote results",
+            description=f"**Winner: {winner_display}** ({top_score} points)",
+            color=discord.Color.gold(),
+        )
+        embed.add_field(name="Points", value=points_text, inline=False)
 
-        await send_result("\n".join(lines))
+        await send_result(embed)
         await self._finish_session(guild, session)
         return None
 
@@ -387,6 +655,8 @@ class VotingCog(commands.Cog, name="Voting"):
         session = self.active_votes.get(guild.id)
         if session is None:
             return "There's no active vote in this server."
+
+        self.config.reload()
 
         await send_notice(f"🛑 Voting for **{session.voice_channel.name}** has been cancelled.")
 
@@ -404,8 +674,8 @@ class VotingCog(commands.Cog, name="Voting"):
     async def _on_end_vote_button(self, interaction: discord.Interaction, guild_id: int):
         await interaction.response.defer()
 
-        async def send_result(text: str):
-            await interaction.channel.send(text)
+        async def send_result(payload: Union[str, discord.Embed]):
+            await self._channel_payload(interaction.channel, payload)
 
         error = await self._perform_end_vote(interaction.guild, send_result)
         if error:
@@ -414,8 +684,8 @@ class VotingCog(commands.Cog, name="Voting"):
     async def _on_cancel_vote_button(self, interaction: discord.Interaction, guild_id: int):
         await interaction.response.defer()
 
-        async def send_notice(text: str):
-            await interaction.channel.send(text)
+        async def send_notice(payload: Union[str, discord.Embed]):
+            await self._channel_payload(interaction.channel, payload)
 
         error = await self._perform_cancel_vote(interaction.guild, send_notice)
         if error:
@@ -432,25 +702,52 @@ class VotingCog(commands.Cog, name="Voting"):
             await interaction.followup.send("Runners-up history is already included this round.", ephemeral=True)
             return
 
+        self.config.reload()
         history = self.history.load(guild_id)
         session.include_history = True
         session.history_snapshot = history
 
         if history:
             ranked_history = sorted(history.items(), key=lambda kv: kv[1], reverse=True)
-            lines = ["📜 **Runners-up history** (bonus only applies if voted for this round):"]
-            lines.extend(f"- {name}: +{streak}" for name, streak in ranked_history)
-            history_text = "\n".join(lines)
+            history_text = "\n".join(
+                f"{self._display_nominee(name, as_markdown_link=True)} — +{streak}" for name, streak in ranked_history
+            )
+            embed = discord.Embed(
+                title="📜 Runners-up history",
+                description="Bonus only applies if voted for this round.",
+                color=discord.Color.blurple(),
+            )
+            embed.add_field(name="Streaks", value=history_text, inline=False)
         else:
-            history_text = "📜 No runners-up history yet for this server."
+            embed = discord.Embed(
+                title="📜 Runners-up history",
+                description="No runners-up history yet for this server.",
+                color=discord.Color.blurple(),
+            )
 
         try:
-            await session.tracking_message.reply(history_text, mention_author=False)
+            await session.tracking_message.reply(embed=embed, mention_author=False)
         except discord.HTTPException:
             pass
 
         await self._update_tracking_message(session)
         await interaction.followup.send("Runners-up history included for this round.", ephemeral=True)
+
+    async def _on_abstain_button(self, interaction: discord.Interaction):
+        session, participant = self._find_participant(interaction.user.id)
+        if session is None:
+            await interaction.response.send_message("This vote has already ended.", ephemeral=True)
+            return
+        if participant.status != "pending":
+            await interaction.response.send_message(
+                "You've already submitted your vote for this round.", ephemeral=True
+            )
+            return
+
+        participant.status = "abstained"
+        participant.votes = []
+        await interaction.response.send_message("You've abstained from this vote.", ephemeral=True)
+        await self._update_tracking_message(session)
 
     # ---------- commands ----------
 
@@ -465,6 +762,8 @@ class VotingCog(commands.Cog, name="Voting"):
         Requires at least 3 people in the channel. With just 1 or 2 of you,
         skip the ceremony and talk it out directly.
         """
+        self.config.reload()
+
         if ctx.guild.id in self.active_votes:
             await ctx.reply(
                 "A vote is already in progress in this server. Use `!end_vote` or `!cancel_vote` first.",
@@ -495,6 +794,8 @@ class VotingCog(commands.Cog, name="Voting"):
             participants=participants,
         )
         self.active_votes[ctx.guild.id] = session
+        if self.config.sound_effects_enabled:
+            self.sounds.fire(ctx.guild, voice_channel, "start")
 
         tracking_message = await ctx.reply(
             embed=self._build_embed(session), view=self._build_view(session), mention_author=False
@@ -504,7 +805,7 @@ class VotingCog(commands.Cog, name="Voting"):
         failed_dms = []
         for participant in participants.values():
             try:
-                await participant.member.send(self._format_prompt(session))
+                await participant.member.send(self._format_prompt(session), view=self._build_abstain_view())
             except discord.Forbidden:
                 failed_dms.append(participant.member.display_name)
 
@@ -523,14 +824,14 @@ class VotingCog(commands.Cog, name="Voting"):
         abstained. Ties automatically trigger a tie-breaker round instead of
         ending the vote.
         """
-        error = await self._perform_end_vote(ctx.guild, lambda text: ctx.reply(text, mention_author=False))
+        error = await self._perform_end_vote(ctx.guild, lambda payload: self._reply_payload(ctx, payload))
         if error:
             await ctx.reply(error, mention_author=False)
 
     @commands.command(name="cancel_vote")
     async def cancel_vote(self, ctx: commands.Context):
         """Cancel the current vote with no winner."""
-        error = await self._perform_cancel_vote(ctx.guild, lambda text: ctx.reply(text, mention_author=False))
+        error = await self._perform_cancel_vote(ctx.guild, lambda payload: self._reply_payload(ctx, payload))
         if error:
             await ctx.reply(error, mention_author=False)
 
@@ -552,13 +853,6 @@ class VotingCog(commands.Cog, name="Voting"):
             return
 
         content = message.content.strip()
-
-        if content.lower() == "abstain":
-            participant.status = "abstained"
-            participant.votes = []
-            await message.channel.send("You've abstained from this vote.")
-            await self._update_tracking_message(session)
-            return
 
         raw_lines = [line.strip() for line in content.splitlines() if line.strip()]
         parsed = [_strip_enumeration(line).lower() for line in raw_lines[:3]]

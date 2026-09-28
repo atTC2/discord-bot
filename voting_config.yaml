@@ -1,0 +1,60 @@
+# Voting cog configuration.
+# Edit this file directly and it takes effect on the next !start_vote or
+# !end_vote - no bot restart needed.
+
+features:
+  # Dramatic start/finish/cancel voice lines (see sounds/README.txt). Leave
+  # this off until you've actually dropped clips in there - flipping it on
+  # with no clips present just means nothing plays, but there's no point
+  # turning it on early.
+  sound_effects_enabled: false
+
+# Lookup table: short vote keys -> full title (+ optional web link).
+# People still vote using the short key (e.g. "oam") - results, the tie
+# announcement, and the runner-up history list all show the full title
+# instead, as a clickable link whenever a url is given.
+#
+# Use an ordinary http(s) page here (a store page, a Spotify track, a
+# YouTube video...) rather than an app-specific protocol like steam:// -
+# Discord no longer renders custom protocols as clickable links at all,
+# but a plain web link works everywhere, and most of these pages show
+# their own "Play"/"Launch" button once you're signed in anyway.
+#
+# url is optional; omit it for a plain title with no link.
+lookups:
+  aom:
+    title: "Age of Mythology"
+    url: "https://store.steampowered.com/app/266840/Age_of_Mythology_Extended_Edition/"
+  age of empires iii:
+    title: "Age of Empires III"
+    url: "https://store.steampowered.com/app/933110/Age_of_Empires_III_Definitive_Edition/"
+  cossacks 3:
+    title: "Cossacks 3"
+    url: "https://store.steampowered.com/app/333420/Cossacks_3/"
+  helldivers 2:
+    title: "HELLDIVERS II"
+    url: "https://store.steampowered.com/app/553850"
+  northgard:
+    title: "Northgard"
+    url: "https://store.steampowered.com/app/466560/Northgard_Definitive_Edition/"
+  peak:
+    title: "PEAK"
+    url: "https://store.steampowered.com/app/3527290/PEAK/"
+  "planetary annihilation: titans":
+    title: "Planetary Annihilation: TITANS"
+    url: "https://store.steampowered.com/app/386070/Planetary_Annihilation_TITANS/"
+  pubg:
+    title: "PUBG: BATTLEGROUNDS"
+    url: "https://store.steampowered.com/app/578080/PUBG_BATTLEGROUNDS/"
+  rusted warfare:
+    title: "Rusted Warfare - RTS"
+    url: "https://store.steampowered.com/app/647960/Rusted_Warfare__RTS/"
+  stronghold 2:
+    title: "Stronghold 2"
+    url: "https://store.steampowered.com/app/40960/Stronghold_2_Steam_Edition/"
+  ultimate chicken horse:
+    title: "Ultimate Chicken Horse"
+    url: "https://store.steampowered.com/app/386940/Ultimate_Chicken_Horse/"
+  zeepkist:
+    title: "Zeepkist"
+    url: "https://store.steampowered.com/app/1440670/Zeepkist/"
