@@ -1,0 +1,203 @@
+# Config for the !suggest_games command (re-read on every command).
+# remote_play = works via Steam Remote Play Together / party-style local multiplayer.
+
+games:
+  # --- Co-op / survival / sandbox ---
+  - title: "Earth Defense Force 6"
+    url: "https://store.steampowered.com/app/2291060"
+    mac_compatible: false
+    remote_play: true
+  - title: "Satisfactory"
+    url: "https://store.steampowered.com/app/526870"
+    mac_compatible: false
+    remote_play: false
+  - title: "Grand Theft Auto V"
+    url: "https://store.steampowered.com/app/271590"
+    mac_compatible: false
+    remote_play: false
+  - title: "Counter-Strike 2"
+    url: "https://store.steampowered.com/app/730"
+    mac_compatible: false
+    remote_play: false
+  - title: "Astroneer"
+    url: "https://store.steampowered.com/app/361420"
+    mac_compatible: false
+    remote_play: false
+  - title: "Baldur's Gate 3"
+    url: "https://store.steampowered.com/app/1086940"
+    mac_compatible: true
+    remote_play: false
+  - title: "Minecraft"
+    url: "https://www.minecraft.net/"
+    mac_compatible: true   # Java Edition
+    remote_play: false
+  - title: "Barotrauma"
+    url: "https://store.steampowered.com/app/602960"
+    mac_compatible: true
+    remote_play: false
+  - title: "Space Engineers"
+    url: "https://store.steampowered.com/app/244850"
+    mac_compatible: false
+    remote_play: false
+  - title: "Factorio"
+    url: "https://store.steampowered.com/app/427520"
+    mac_compatible: true
+    remote_play: false
+  - title: "Green Hell"
+    url: "https://store.steampowered.com/app/815370"
+    mac_compatible: false
+    remote_play: false
+  - title: "Helldivers 2"
+    url: "https://store.steampowered.com/app/553850"
+    mac_compatible: false
+    remote_play: false
+  - title: "War Thunder"
+    url: "https://store.steampowered.com/app/236390"
+    mac_compatible: true
+    remote_play: false
+  - title: "Deep Rock Galactic"
+    url: "https://store.steampowered.com/app/548430"
+    mac_compatible: false
+    remote_play: false
+  - title: "Vampire Survivors"
+    url: "https://store.steampowered.com/app/1794680"
+    mac_compatible: true
+    remote_play: true   # local co-op up to 4
+  - title: "Magicka 2"
+    url: "https://store.steampowered.com/app/238370"
+    mac_compatible: false
+    remote_play: false
+  - title: "Vampire: The Masquerade - Bloodhunt"
+    url: "https://store.steampowered.com/app/760160"
+    mac_compatible: false
+    remote_play: false
+  - title: "Project Zomboid"
+    url: "https://store.steampowered.com/app/108600"
+    mac_compatible: true
+    remote_play: false
+
+  # --- Party games ---
+  - title: "Left 4 Dead 2"
+    url: "https://store.steampowered.com/app/550"
+    mac_compatible: true
+    remote_play: false
+  - title: "Ultimate Chicken Horse"
+    url: "https://store.steampowered.com/app/386940"
+    mac_compatible: true
+    remote_play: true
+  - title: "Unrailed!"
+    url: "https://store.steampowered.com/app/1016920"
+    mac_compatible: true
+    remote_play: true
+  - title: "Slapshot: Rebound"
+    url: "https://store.steampowered.com/app/1173370"
+    mac_compatible: false
+    remote_play: true
+  - title: "Rocket League"
+    url: "https://www.rocketleague.com/"   # no longer on Steam
+    mac_compatible: false
+    remote_play: false
+  - title: "Tabletop Simulator"
+    url: "https://store.steampowered.com/app/286160"
+    mac_compatible: true
+    remote_play: false
+  - title: "GeoGuessr"
+    url: "https://www.geoguessr.com/"
+    mac_compatible: true   # browser
+    remote_play: false
+  - title: "Mount Your Friends"
+    url: "https://store.steampowered.com/search/?term=Mount+Your+Friends"   # search link, swap for store page
+    mac_compatible: false
+    remote_play: true
+  - title: "Worms W.M.D"
+    url: "https://store.steampowered.com/app/327030"
+    mac_compatible: true
+    remote_play: true
+  - title: "Golf With Your Friends"
+    url: "https://store.steampowered.com/app/431240"
+    mac_compatible: false
+    remote_play: true
+  - title: "PEAK"
+    url: "https://store.steampowered.com/app/3527290"
+    mac_compatible: false
+    remote_play: false
+  - title: "Zeepkist"
+    url: "https://store.steampowered.com/app/1440670"
+    mac_compatible: false
+    remote_play: false
+  - title: "Meccha Chameleon"
+    url: "https://store.steampowered.com/app/4704690"
+    mac_compatible: false
+    remote_play: true
+
+  # --- Strategy ---
+  - title: "Northgard"
+    url: "https://store.steampowered.com/app/466560"
+    mac_compatible: true
+    remote_play: false
+  - title: "Age of Empires II: Definitive Edition"
+    url: "https://store.steampowered.com/app/813780"
+    mac_compatible: false
+    remote_play: false
+  - title: "Age of Empires III: Definitive Edition"
+    url: "https://store.steampowered.com/app/933110"
+    mac_compatible: false
+    remote_play: false
+  - title: "Age of Mythology: Retold"
+    url: "https://store.steampowered.com/app/1934680"
+    mac_compatible: false
+    remote_play: false
+  - title: "Cossacks 3"
+    url: "https://store.steampowered.com/app/333420"
+    mac_compatible: true
+    remote_play: false
+  - title: "Halo Wars: Definitive Edition"
+    url: "https://store.steampowered.com/app/459220"
+    mac_compatible: false
+    remote_play: false
+  - title: "Planetary Annihilation: TITANS"
+    url: "https://store.steampowered.com/app/386070"
+    mac_compatible: true
+    remote_play: false
+  - title: "Rise of Nations: Extended Edition"
+    url: "https://store.steampowered.com/app/287450"
+    mac_compatible: false
+    remote_play: false
+  - title: "Rusted Warfare"
+    url: "https://store.steampowered.com/app/647960"
+    mac_compatible: true
+    remote_play: false
+  - title: "Stronghold 2"
+    url: "https://store.steampowered.com/app/40960"
+    mac_compatible: false
+    remote_play: false
+  - title: "Warzone 2100"
+    url: "https://wz2100.net/"   # free/open source
+    mac_compatible: true
+    remote_play: false
+  - title: "Warcraft III: Reforged"
+    url: "https://warcraft3.blizzard.com/"   # Battle.net, not Steam
+    mac_compatible: true
+    remote_play: false
+
+players:
+  - name: "bear of polar"
+    discord_id: 182203903553568768
+    dislikes: 
+      - Earth Defense Force 6
+  - name: "12 loose screws and a bearing"
+    discord_id: 182207543291019264
+    dislikes:
+      - Satisfactory
+  - name: "Ramecon"
+    discord_id: 227536127375048706
+    dislikes:
+      - Counter-Strike 2
+  - name: "Best Ben"
+    discord_id: 331757062411255810
+    dislikes:
+      - Astroneer
+      - Baldur's Gate 3
+  - name: "hyperfocused beeman"
+    discord_id: 500002362023477248
+    dislikes: []

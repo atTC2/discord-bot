@@ -20,11 +20,11 @@ Commands:
     !start_vote   - snapshots everyone in your current voice channel, posts a
                     live-updating status message (with buttons), and DMs each
                     participant asking them to vote.
-    !end_vote     - once at least (n-1) of the n participants are ready
-                    (voted or abstained), tallies points and announces a
-                    winner. Errors if called too early. Ties automatically
-                    trigger a tie-breaker round restricted to the tied
-                    nominees.
+    !end_vote     - once at least 3 people have actually voted (abstentions
+                    don't count toward this, though they still show up as a
+                    response), tallies points and announces a winner. Errors
+                    if called too early. Ties automatically trigger a
+                    tie-breaker round restricted to the tied nominees.
     !cancel_vote  - closes an in-progress vote without printing results.
 
 The live-updating message also carries three buttons doing the same things
@@ -32,9 +32,9 @@ as the three commands above, plus "Include Previous Runners-Up" (see below).
 
 Voting (via DM to the bot):
     Reply with up to 3 lines, most preferred first, e.g.:
-        1. Song A
-        2. Song B
-        3. Song C
+        1. Option A
+        2. Option B
+        3. Option C
     Any leading number/letter followed by "." ")" "]" or "}" is stripped.
     Matching is case-insensitive. Each vote DM also carries an Abstain
     button for anyone who doesn't want to vote that round.
@@ -116,6 +116,13 @@ from discord.ext import commands
 _ENUM_RE = re.compile(r"^\s*[0-9a-zA-Z]{1,3}\s*[.\)\]\}]\s*")
 
 _WEIGHTS = [3, 2, 1]
+
+# !end_vote requires at least this many actual votes (abstentions don't
+# count toward it, though they still show up as a response). Note: for a
+# group of exactly 3 (the minimum to start a vote at all), if anyone
+# abstains this can never be reached since only 2 people are left who can
+# vote -- !cancel_vote is the way out of that one.
+_MIN_VOTES_TO_END = 3
 
 _HISTORY_DIR = Path(__file__).resolve().parent / "data" / "vote_history"
 
@@ -388,6 +395,16 @@ class VotingCog(commands.Cog, name="Voting"):
                 return session, session.participants[user_id]
         return None, None
 
+    def _end_vote_status(self, session: VoteSession):
+        """Returns (votes_cast, responded, total, can_end). votes_cast only
+        counts actual votes -- abstentions don't count toward the threshold
+        even though they do count as a response."""
+        total = len(session.participants)
+        votes_cast = sum(1 for p in session.participants.values() if p.status == "voted")
+        responded = sum(1 for p in session.participants.values() if p.status != "pending")
+        can_end = votes_cast >= _MIN_VOTES_TO_END
+        return votes_cast, responded, total, can_end
+
     def _build_embed(self, session: VoteSession, finished: bool = False, cancelled: bool = False) -> discord.Embed:
         if cancelled:
             return discord.Embed(
@@ -433,15 +450,15 @@ class VotingCog(commands.Cog, name="Voting"):
         embed.add_field(name="Status", value="\n".join(lines) or "No participants", inline=False)
 
         if not finished:
-            ready = sum(1 for p in session.participants.values() if p.status != "pending")
-            embed.set_footer(text=f"{ready}/{len(session.participants)} ready")
+            votes_cast, responded, total, _ = self._end_vote_status(session)
+            embed.set_footer(
+                text=f"{votes_cast}/{_MIN_VOTES_TO_END} votes to end vote • {responded}/{total} responded"
+            )
 
         return embed
 
     def _build_view(self, session: VoteSession) -> discord.ui.View:
-        total = len(session.participants)
-        ready = sum(1 for p in session.participants.values() if p.status != "pending")
-        needed = max(total - 1, 1)
+        _, _, _, can_end = self._end_vote_status(session)
         guild_id = session.guild_id
 
         view = discord.ui.View(timeout=None)
@@ -461,7 +478,7 @@ class VotingCog(commands.Cog, name="Voting"):
         end_button = discord.ui.Button(
             label="End Vote",
             style=discord.ButtonStyle.green,
-            disabled=ready < needed,
+            disabled=not can_end,
         )
 
         async def end_callback(interaction: discord.Interaction):
@@ -506,7 +523,7 @@ class VotingCog(commands.Cog, name="Voting"):
         return (
             f"🗳️ Vote for **#{session.voice_channel.name}**!\n\n"
             "Reply with up to 3 lines, your top pick first, e.g.:\n"
-            "1. Song A\n2. Song B\n3. Song C\n\n"
+            "1. Option A\n2. Option B\n3. Option C\n\n"
             "Leading numbers/letters followed by a full stop or bracket "
             "(like \"1)\" or \"a.\") are ignored, so plain lines work too.\n\n"
             "Don't want to vote this round? Tap the Abstain button below."
@@ -611,12 +628,13 @@ class VotingCog(commands.Cog, name="Voting"):
 
         self.config.reload()
 
-        total = len(session.participants)
-        ready = sum(1 for p in session.participants.values() if p.status != "pending")
-        needed = max(total - 1, 1)
+        votes_cast, responded, total, can_end = self._end_vote_status(session)
 
-        if ready < needed:
-            return f"⚠️ Not enough people are ready yet ({ready}/{total} ready, need at least {needed})."
+        if not can_end:
+            return (
+                f"⚠️ Not enough votes yet ({votes_cast}/{_MIN_VOTES_TO_END} votes cast — "
+                f"abstentions don't count toward this; {responded}/{total} have responded)."
+            )
 
         points = self._tally(session)
 
@@ -709,15 +727,17 @@ class VotingCog(commands.Cog, name="Voting"):
 
         if history:
             ranked_history = sorted(history.items(), key=lambda kv: kv[1], reverse=True)
-            history_text = "\n".join(
-                f"{self._display_nominee(name, as_markdown_link=True)} — +{streak}" for name, streak in ranked_history
-            )
+            medals = ["🥇", "🥈", "🥉"]
+            lines = []
+            for i, (name, streak) in enumerate(ranked_history):
+                prefix = medals[i] if i < len(medals) else "•"
+                lines.append(f"{prefix} {self._display_nominee(name, as_markdown_link=True)} — +{streak}")
             embed = discord.Embed(
                 title="📜 Runners-up history",
                 description="Bonus only applies if voted for this round.",
                 color=discord.Color.blurple(),
             )
-            embed.add_field(name="Streaks", value=history_text, inline=False)
+            embed.add_field(name="Streaks", value="\n".join(lines), inline=False)
         else:
             embed = discord.Embed(
                 title="📜 Runners-up history",
@@ -728,7 +748,10 @@ class VotingCog(commands.Cog, name="Voting"):
         try:
             await session.tracking_message.reply(embed=embed, mention_author=False)
         except discord.HTTPException:
-            pass
+            try:
+                await session.text_channel.send(embed=embed)
+            except discord.HTTPException:
+                pass
 
         await self._update_tracking_message(session)
         await interaction.followup.send("Runners-up history included for this round.", ephemeral=True)
@@ -820,9 +843,9 @@ class VotingCog(commands.Cog, name="Voting"):
     async def end_vote(self, ctx: commands.Context):
         """Tally votes and announce the winner.
 
-        Requires at least (participants - 1) people to have voted or
-        abstained. Ties automatically trigger a tie-breaker round instead of
-        ending the vote.
+        Requires at least 3 actual votes to have been cast — abstentions
+        don't count toward this. Ties automatically trigger a tie-breaker
+        round instead of ending the vote.
         """
         error = await self._perform_end_vote(ctx.guild, lambda payload: self._reply_payload(ctx, payload))
         if error:

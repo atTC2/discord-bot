@@ -58,3 +58,15 @@ lookups:
   zeepkist:
     title: "Zeepkist"
     url: "https://store.steampowered.com/app/1440670/Zeepkist/"
+  satisfactory:
+    title: "Satisfactory"
+    url: "https://store.steampowered.com/app/526870/Satisfactory/"
+  gta v:
+    title: "Grand Theft Auto V"
+    url: "https://store.steampowered.com/app/3240220/Grand_Theft_Auto_V_Enhanced/"
+  cs2:
+    title: "Counter-Strike 2"
+    url: "https://store.steampowered.com/app/730/CounterStrike_2/"
+  astroneer:
+    title: "ASTRONEER"
+    url: "https://store.steampowered.com/app/361420/ASTRONEER/"
