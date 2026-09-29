@@ -70,3 +70,87 @@ lookups:
   astroneer:
     title: "ASTRONEER"
     url: "https://store.steampowered.com/app/361420/ASTRONEER/"
+  earth defense force:
+    title: "Earth Defense Force 6"
+    url: "https://store.steampowered.com/app/2291060"
+  bg3:
+    title: "Baldur's Gate 3"
+    url: "https://store.steampowered.com/app/1086940"
+  minecraft:
+    title: "Minecraft"
+    url: "https://www.minecraft.net/"
+  barotrauma:
+    title: "Barotrauma"
+    url: "https://store.steampowered.com/app/602960"
+  space engineers:
+    title: "Space Engineers"
+    url: "https://store.steampowered.com/app/244850"
+  factorio:
+    title: "Factorio"
+    url: "https://store.steampowered.com/app/427520"
+  green hell:
+    title: "Green Hell"
+    url: "https://store.steampowered.com/app/815370"
+  war thunder:
+    title: "War Thunder"
+    url: "https://store.steampowered.com/app/236390"
+  deep rock galactic:
+    title: "Deep Rock Galactic"
+    url: "https://store.steampowered.com/app/548430"
+  vampire survivors:
+    title: "Vampire Survivors"
+    url: "https://store.steampowered.com/app/1794680"
+  magicka 2:
+    title: "Magicka 2"
+    url: "https://store.steampowered.com/app/238370"
+  bloodhunt:
+    title: "Vampire: The Masquerade - Bloodhunt"
+    url: "https://store.steampowered.com/app/760160"
+  project zomboid:
+    title: "Project Zomboid"
+    url: "https://store.steampowered.com/app/108600"
+  l4d2:
+    title: "Left 4 Dead 2"
+    url: "https://store.steampowered.com/app/550"
+  unrailed:
+    title: "Unrailed!"
+    url: "https://store.steampowered.com/app/1016920"
+  slapshot:
+    title: "Slapshot: Rebound"
+    url: "https://store.steampowered.com/app/1173370"
+  rocket league:
+    title: "Rocket League"
+    url: "https://www.rocketleague.com/"
+  tabletop simulator:
+    title: "Tabletop Simulator"
+    url: "https://store.steampowered.com/app/286160"
+  geoguessr:
+    title: "GeoGuessr"
+    url: "https://www.geoguessr.com/"
+  mount your friends:
+    title: "Mount Your Friends"
+    url: "https://store.steampowered.com/app/296470/Mount_Your_Friends/"
+  worms:
+    title: "Worms W.M.D"
+    url: "https://store.steampowered.com/app/327030"
+  golf with your friends:
+    title: "Golf With Your Friends"
+    url: "https://store.steampowered.com/app/431240"
+  meccha chameleon:
+    title: "Meccha Chameleon"
+    url: "https://store.steampowered.com/app/4704690"
+  aoe2:
+    title: "Age of Empires II: Definitive Edition"
+    url: "https://store.steampowered.com/app/813780"
+  halo wars:
+    title: "Halo Wars: Definitive Edition"
+    url: "https://store.steampowered.com/app/459220"
+  rise of nations:
+    title: "Rise of Nations: Extended Edition"
+    url: "https://store.steampowered.com/app/287450"
+  warzone 2100:
+    title: "Warzone 2100"
+    url: "https://wz2100.net/"
+  wc3:
+    title: "Warcraft III: Reforged"
+    url: "https://warcraft3.blizzard.com/"

@@ -106,7 +106,7 @@ games:
     mac_compatible: true   # browser
     remote_play: false
   - title: "Mount Your Friends"
-    url: "https://store.steampowered.com/search/?term=Mount+Your+Friends"   # search link, swap for store page
+    url: "https://store.steampowered.com/app/296470/Mount_Your_Friends/"
     mac_compatible: false
     remote_play: true
   - title: "Worms W.M.D"
