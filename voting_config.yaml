@@ -7,7 +7,7 @@ features:
   # this off until you've actually dropped clips in there - flipping it on
   # with no clips present just means nothing plays, but there's no point
   # turning it on early.
-  sound_effects_enabled: false
+  sound_effects_enabled: true
 
 # Lookup table: short vote keys -> full title (+ optional web link).
 # People still vote using the short key (e.g. "oam") - results, the tie
