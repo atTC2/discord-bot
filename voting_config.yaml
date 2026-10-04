@@ -9,6 +9,12 @@ features:
   # turning it on early.
   sound_effects_enabled: true
 
+  # Playback volume for those clips: 1.0 is the clip's original volume,
+  # 0.5 is half as loud, 0.0 is silent. Values above 1.0 amplify further
+  # but can distort - kept clamped to 2.0 max. Defaults to 0.5 so a clip
+  # recorded at full volume doesn't blast anyone.
+  sound_effects_volume: 0.5
+
 # Lookup table: short vote keys -> full title (+ optional web link).
 # People still vote using the short key (e.g. "oam") - results, the tie
 # announcement, and the runner-up history list all show the full title

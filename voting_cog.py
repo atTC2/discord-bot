@@ -90,15 +90,22 @@ Sound effects:
     Off by default (features.sound_effects_enabled: false in
     voting_config.yaml) until you've actually got clips to play. Once
     enabled: drop your own audio clips into a "sounds" folder next to this
-    file (voting_started / voting_finished / voting_cancelled, any ffmpeg-
-    readable format) and the bot will connect to the voice channel being
-    voted in, play the clip once, and disconnect. A README.txt is written
-    into that folder automatically the first time this cog runs. If a clip
-    is missing, that sting is silently skipped. If the bot is already
-    playing something in that guild (e.g. music), the sting is skipped
-    entirely rather than interrupting it -- discord.py only supports one
-    audio stream per voice connection, so a voice line and music can't play
-    at once on the same connection.
+    file (voting_started / voting_finished / voting_cancelled /
+    voting_tiebreak, any ffmpeg-readable format) and the bot will connect
+    to the voice channel being voted in, play the clip once, and
+    disconnect. voting_tiebreak plays whenever a round ties and a
+    tie-breaker round starts (in addition to the usual tie announcement
+    message). A README.txt is written into that folder automatically the
+    first time this cog runs. If a clip is missing, that sting is silently
+    skipped. If the bot is already playing something in that guild (e.g.
+    music), the sting is skipped entirely rather than interrupting it --
+    discord.py only supports one audio stream per voice connection, so a
+    voice line and music can't play at once on the same connection.
+
+    Playback volume is features.sound_effects_volume in voting_config.yaml
+    -- 1.0 is the clip's original volume, 0.5 is half, 0.0 is silent;
+    values above 1.0 amplify further but can distort, so it's clamped to
+    2.0 max. Defaults to 0.5.
 """
 
 import asyncio
@@ -133,11 +140,17 @@ _CONFIG_TEMPLATE = """\
 # !end_vote - no bot restart needed.
 
 features:
-  # Dramatic start/finish/cancel voice lines (see sounds/README.txt). Leave
-  # this off until you've actually dropped clips in there - flipping it on
-  # with no clips present just means nothing plays, but there's no point
-  # turning it on early.
+  # Dramatic start/finish/cancel/tie-break voice lines (see
+  # sounds/README.txt). Leave this off until you've actually dropped clips
+  # in there - flipping it on with no clips present just means nothing
+  # plays, but there's no point turning it on early.
   sound_effects_enabled: false
+
+  # Playback volume for those clips: 1.0 is the clip's original volume,
+  # 0.5 is half as loud, 0.0 is silent. Values above 1.0 amplify further
+  # but can distort - kept clamped to 2.0 max. Defaults to 0.5 so a clip
+  # recorded at full volume doesn't blast anyone.
+  sound_effects_volume: 0.5
 
 # Lookup table: short vote keys -> full title (+ optional web link).
 # People still vote using the short key (e.g. "oam") - results, the tie
@@ -158,15 +171,19 @@ lookups:
 """
 
 # Drop your own audio files here, named voting_started/voting_finished/
-# voting_cancelled with any ffmpeg-readable extension (mp3, wav, ogg, m4a,
-# flac...). If a file's missing, that sting is just silently skipped.
+# voting_cancelled/voting_tiebreak with any ffmpeg-readable extension (mp3,
+# wav, ogg, m4a, flac...). If a file's missing, that sting is just silently
+# skipped.
 _SOUNDS_DIR = Path(__file__).resolve().parent / "sounds"
 _SOUND_BASENAMES = {
     "start": "voting_started",
     "end": "voting_finished",
     "cancel": "voting_cancelled",
+    "tie": "voting_tiebreak",
 }
 _SOUND_EXTENSIONS = (".mp3", ".wav", ".ogg", ".m4a", ".flac")
+_MAX_SOUND_VOLUME = 2.0
+_DEFAULT_SOUND_VOLUME = 0.5
 _SOUNDS_README = """\
 Drop dramatic sound effects here for the voting cog to play.
 
@@ -176,12 +193,17 @@ ogg, m4a, flac...):
     voting_started.mp3    - played when !start_vote kicks off
     voting_finished.mp3   - played when a vote concludes with a result
     voting_cancelled.mp3  - played when !cancel_vote is used
+    voting_tiebreak.mp3   - played when a round ties and a tie-break starts
 
 If a file isn't present, that sting is just skipped silently - nothing
 breaks. The bot connects to the voice channel being voted in, plays the
 clip once, and disconnects again, but ONLY if it isn't already playing
 something else in that server (e.g. music) - it will never interrupt or
 talk over an existing stream.
+
+Playback volume is controlled by features.sound_effects_volume in
+voting_config.yaml (0.0-2.0, default 0.5 - half volume so nobody gets
+blasted), not by editing these files.
 """
 
 SendFn = Callable[[Union[str, discord.Embed]], Awaitable[None]]
@@ -208,6 +230,7 @@ class VotingConfig:
         if not self.path.exists():
             self.path.write_text(_CONFIG_TEMPLATE, encoding="utf-8")
         self.sound_effects_enabled: bool = False
+        self.sound_effects_volume: float = _DEFAULT_SOUND_VOLUME
         self.lookups: Dict[str, LookupEntry] = {}
         self.reload()
 
@@ -220,6 +243,12 @@ class VotingConfig:
 
         features = data.get("features") or {}
         self.sound_effects_enabled = bool(features.get("sound_effects_enabled", False))
+
+        try:
+            volume = float(features.get("sound_effects_volume", _DEFAULT_SOUND_VOLUME))
+        except (TypeError, ValueError):
+            volume = _DEFAULT_SOUND_VOLUME
+        self.sound_effects_volume = max(0.0, min(volume, _MAX_SOUND_VOLUME))
 
         lookups: Dict[str, LookupEntry] = {}
         for key, value in (data.get("lookups") or {}).items():
@@ -237,10 +266,11 @@ class VotingConfig:
 
 class SoundEffects:
     """Finds and plays short "sting" audio clips (vote started/finished/
-    cancelled) in a guild's voice channel, connecting and disconnecting just
-    for the clip. Never interrupts audio the bot is already playing (e.g.
-    music) - if the guild's voice client is already playing something, the
-    sting is skipped entirely."""
+    cancelled/tie-break) at a configurable volume in a guild's voice
+    channel, connecting and disconnecting just for the clip. Never
+    interrupts audio the bot is already playing (e.g. music) - if the
+    guild's voice client is already playing something, the sting is
+    skipped entirely."""
 
     def __init__(self, bot: commands.Bot, directory: Path):
         self.bot = bot
@@ -260,14 +290,22 @@ class SoundEffects:
                 return candidate
         return None
 
-    def fire(self, guild: discord.Guild, voice_channel: discord.VoiceChannel, key: str) -> None:
+    def fire(
+        self,
+        guild: discord.Guild,
+        voice_channel: discord.VoiceChannel,
+        key: str,
+        volume: float = _DEFAULT_SOUND_VOLUME,
+    ) -> None:
         """Schedules the sting in the background; never awaited/blocking."""
         path = self._find(key)
         if path is None:
             return
-        self.bot.loop.create_task(self._play(guild, voice_channel, path))
+        self.bot.loop.create_task(self._play(guild, voice_channel, path, volume))
 
-    async def _play(self, guild: discord.Guild, voice_channel: discord.VoiceChannel, path: Path) -> None:
+    async def _play(
+        self, guild: discord.Guild, voice_channel: discord.VoiceChannel, path: Path, volume: float
+    ) -> None:
         vc = guild.voice_client
 
         if vc is not None and vc.is_playing():
@@ -286,7 +324,9 @@ class SoundEffects:
             def _after(_error):
                 self.bot.loop.call_soon_threadsafe(finished.set)
 
-            vc.play(discord.FFmpegPCMAudio(str(path)), after=_after)
+            clamped_volume = max(0.0, min(volume, _MAX_SOUND_VOLUME))
+            source = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(str(path)), volume=clamped_volume)
+            vc.play(source, after=_after)
             await asyncio.wait_for(finished.wait(), timeout=30)
         except (discord.ClientException, discord.DiscordException, asyncio.TimeoutError, OSError):
             pass
@@ -590,7 +630,9 @@ class VotingCog(commands.Cog, name="Voting"):
         await self._update_tracking_message(session, finished=True, cancelled=cancelled)
         self.active_votes.pop(guild.id, None)
         if self.config.sound_effects_enabled:
-            self.sounds.fire(guild, session.voice_channel, "cancel" if cancelled else "end")
+            self.sounds.fire(
+                guild, session.voice_channel, "cancel" if cancelled else "end", volume=self.config.sound_effects_volume
+            )
 
     async def _start_runoff(self, session: VoteSession, tied_nominees: List[str], send_result: SendFn):
         display_names = ", ".join(self._display_nominee(n, as_markdown_link=True) for n in tied_nominees)
@@ -599,6 +641,11 @@ class VotingCog(commands.Cog, name="Voting"):
             color=discord.Color.orange(),
         )
         await send_result(embed)
+
+        if self.config.sound_effects_enabled:
+            self.sounds.fire(
+                session.voice_channel.guild, session.voice_channel, "tie", volume=self.config.sound_effects_volume
+            )
 
         session.runoff_options = tied_nominees
         for p in session.participants.values():
@@ -818,7 +865,7 @@ class VotingCog(commands.Cog, name="Voting"):
         )
         self.active_votes[ctx.guild.id] = session
         if self.config.sound_effects_enabled:
-            self.sounds.fire(ctx.guild, voice_channel, "start")
+            self.sounds.fire(ctx.guild, voice_channel, "start", volume=self.config.sound_effects_volume)
 
         tracking_message = await ctx.reply(
             embed=self._build_embed(session), view=self._build_view(session), mention_author=False
