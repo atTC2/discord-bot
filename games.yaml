@@ -159,7 +159,7 @@ games:
   - title: "Meccha Chameleon"
     url: "https://store.steampowered.com/app/4704690"
     mac_compatible: false
-    remote_play: true
+    remote_play: false
     genre: party
 
   # --- Strategy ---
