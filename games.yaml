@@ -143,7 +143,7 @@ games:
     genre: party
   - title: "Golf With Your Friends"
     url: "https://store.steampowered.com/app/431240"
-    mac_compatible: false
+    mac_compatible: true
     remote_play: true
     genre: party
   - title: "PEAK"
