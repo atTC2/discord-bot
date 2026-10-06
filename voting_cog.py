@@ -20,11 +20,12 @@ Commands:
     !start_vote   - snapshots everyone in your current voice channel, posts a
                     live-updating status message (with buttons), and DMs each
                     participant asking them to vote.
-    !end_vote     - once at least 3 people have actually voted (abstentions
-                    don't count toward this, though they still show up as a
-                    response), tallies points and announces a winner. Errors
-                    if called too early. Ties automatically trigger a
-                    tie-breaker round restricted to the tied nominees.
+    !end_vote     - once at least features.min_votes_to_end people have
+                    actually voted (abstentions don't count toward this,
+                    though they still show up as a response), tallies
+                    points and announces a winner. Errors if called too
+                    early. Ties automatically trigger a tie-breaker round
+                    restricted to the tied nominees.
     !cancel_vote  - closes an in-progress vote without printing results.
 
 The live-updating message also carries three buttons doing the same things
@@ -61,14 +62,22 @@ Runners-up history:
     their normal score -- but only for nominees someone actually votes for
     this round. Nominees nobody votes for are left untouched either way.
 
-!start_vote requires at least 3 people in the voice channel. With only 1 or
-2, a vote doesn't add much over just talking it out.
+!start_vote requires at least features.min_participants_to_start people in
+the voice channel (default 3 -- below that, a vote doesn't add much over
+just talking it out). Set it to 0 to remove the check entirely.
 
 Config file (voting_config.yaml, written next to this file on first run,
 re-read at the start of every command so edits need no restart):
 
     features:
       sound_effects_enabled -- off by default. See "Sound effects" below.
+      min_participants_to_start -- default 3. !start_vote refuses to start
+        with fewer people than this in the voice channel. 0 removes the
+        check (a vote can start with any number of people, even 1).
+      min_votes_to_end -- default 3. !end_vote refuses to tally results
+        until at least this many actual votes have been cast (abstentions
+        don't count toward it). 0 removes the check (!end_vote works even
+        with zero votes cast -- handled as "no winner this round").
 
     lookups:
     Maps a short vote key (what people actually type/vote, e.g. "oam") to
@@ -91,16 +100,18 @@ Sound effects:
     voting_config.yaml) until you've actually got clips to play. Once
     enabled: drop your own audio clips into a "sounds" folder next to this
     file (voting_started / voting_finished / voting_cancelled /
-    voting_tiebreak, any ffmpeg-readable format) and the bot will connect
-    to the voice channel being voted in, play the clip once, and
-    disconnect. voting_tiebreak plays whenever a round ties and a
-    tie-breaker round starts (in addition to the usual tie announcement
-    message). A README.txt is written into that folder automatically the
-    first time this cog runs. If a clip is missing, that sting is silently
-    skipped. If the bot is already playing something in that guild (e.g.
-    music), the sting is skipped entirely rather than interrupting it --
-    discord.py only supports one audio stream per voice connection, so a
-    voice line and music can't play at once on the same connection.
+    voting_tiebreak / voting_toofew, any ffmpeg-readable format) and the
+    bot will connect to the voice channel being voted in, play the clip
+    once, and disconnect. voting_tiebreak plays whenever a round ties and
+    a tie-breaker round starts (in addition to the usual tie announcement
+    message). voting_toofew plays whenever !start_vote is rejected for
+    having fewer than 3 people in the voice channel. A README.txt is
+    written into that folder automatically the first time this cog runs.
+    If a clip is missing, that sting is silently skipped. If the bot is
+    already playing something in that guild (e.g. music), the sting is
+    skipped entirely rather than interrupting it -- discord.py only
+    supports one audio stream per voice connection, so a voice line and
+    music can't play at once on the same connection.
 
     Playback volume is features.sound_effects_volume in voting_config.yaml
     -- 1.0 is the clip's original volume, 0.5 is half, 0.0 is silent;
@@ -124,12 +135,11 @@ _ENUM_RE = re.compile(r"^\s*[0-9a-zA-Z]{1,3}\s*[.\)\]\}]\s*")
 
 _WEIGHTS = [3, 2, 1]
 
-# !end_vote requires at least this many actual votes (abstentions don't
-# count toward it, though they still show up as a response). Note: for a
-# group of exactly 3 (the minimum to start a vote at all), if anyone
-# abstains this can never be reached since only 2 people are left who can
-# vote -- !cancel_vote is the way out of that one.
-_MIN_VOTES_TO_END = 3
+# Defaults for the two config-driven minimums below (see VotingConfig and
+# voting_config.yaml) -- only used the first time the config file is
+# created, or if a value is missing/invalid in it.
+_DEFAULT_MIN_PARTICIPANTS_TO_START = 3
+_DEFAULT_MIN_VOTES_TO_END = 3
 
 _HISTORY_DIR = Path(__file__).resolve().parent / "data" / "vote_history"
 
@@ -152,6 +162,21 @@ features:
   # recorded at full volume doesn't blast anyone.
   sound_effects_volume: 0.5
 
+  # Fewer than this many people in the voice channel and !start_vote
+  # refuses to start ("just talk it out instead"). 0 removes the check
+  # entirely - a vote can start with any number of people, even 1.
+  min_participants_to_start: 3
+
+  # !end_vote needs at least this many actual votes cast before it'll
+  # tally and announce a winner - abstentions don't count toward this,
+  # though they still show up as a response. 0 removes the check entirely
+  # - !end_vote works even with zero votes cast (handled as "no winner").
+  # Note: if min_participants_to_start is 3 (or more) and this is left at
+  # its own default of 3, a vote can deadlock if anyone abstains, since
+  # that leaves only 2 people who can still vote - !cancel_vote is the way
+  # out of that one. Lowering this value avoids the deadlock.
+  min_votes_to_end: 3
+
 # Lookup table: short vote keys -> full title (+ optional web link).
 # People still vote using the short key (e.g. "oam") - results, the tie
 # announcement, and the runner-up history list all show the full title
@@ -171,15 +196,16 @@ lookups:
 """
 
 # Drop your own audio files here, named voting_started/voting_finished/
-# voting_cancelled/voting_tiebreak with any ffmpeg-readable extension (mp3,
-# wav, ogg, m4a, flac...). If a file's missing, that sting is just silently
-# skipped.
+# voting_cancelled/voting_tiebreak/voting_toofew with any ffmpeg-readable
+# extension (mp3, wav, ogg, m4a, flac...). If a file's missing, that sting
+# is just silently skipped.
 _SOUNDS_DIR = Path(__file__).resolve().parent / "sounds"
 _SOUND_BASENAMES = {
     "start": "voting_started",
     "end": "voting_finished",
     "cancel": "voting_cancelled",
     "tie": "voting_tiebreak",
+    "too_few": "voting_toofew",
 }
 _SOUND_EXTENSIONS = (".mp3", ".wav", ".ogg", ".m4a", ".flac")
 _MAX_SOUND_VOLUME = 2.0
@@ -194,6 +220,8 @@ ogg, m4a, flac...):
     voting_finished.mp3   - played when a vote concludes with a result
     voting_cancelled.mp3  - played when !cancel_vote is used
     voting_tiebreak.mp3   - played when a round ties and a tie-break starts
+    voting_toofew.mp3     - played when !start_vote is rejected for having
+                             fewer than 3 people in the voice channel
 
 If a file isn't present, that sting is just skipped silently - nothing
 breaks. The bot connects to the voice channel being voted in, plays the
@@ -220,10 +248,11 @@ class LookupEntry:
 
 
 class VotingConfig:
-    """Loads voting_config.yaml: the sound-effects feature toggle and the
-    key -> title/link lookup table. Cheap to re-read, so callers reload it
-    at the start of each command rather than caching forever - edits take
-    effect on the next vote with no bot restart."""
+    """Loads voting_config.yaml: the sound-effects feature toggle, the
+    participant/vote minimums, and the key -> title/link lookup table.
+    Cheap to re-read, so callers reload it at the start of each command
+    rather than caching forever - edits take effect on the next vote with
+    no bot restart."""
 
     def __init__(self, path: Path):
         self.path = path
@@ -231,6 +260,8 @@ class VotingConfig:
             self.path.write_text(_CONFIG_TEMPLATE, encoding="utf-8")
         self.sound_effects_enabled: bool = False
         self.sound_effects_volume: float = _DEFAULT_SOUND_VOLUME
+        self.min_participants_to_start: int = _DEFAULT_MIN_PARTICIPANTS_TO_START
+        self.min_votes_to_end: int = _DEFAULT_MIN_VOTES_TO_END
         self.lookups: Dict[str, LookupEntry] = {}
         self.reload()
 
@@ -249,6 +280,18 @@ class VotingConfig:
         except (TypeError, ValueError):
             volume = _DEFAULT_SOUND_VOLUME
         self.sound_effects_volume = max(0.0, min(volume, _MAX_SOUND_VOLUME))
+
+        try:
+            min_participants = int(features.get("min_participants_to_start", _DEFAULT_MIN_PARTICIPANTS_TO_START))
+        except (TypeError, ValueError):
+            min_participants = _DEFAULT_MIN_PARTICIPANTS_TO_START
+        self.min_participants_to_start = max(0, min_participants)
+
+        try:
+            min_votes = int(features.get("min_votes_to_end", _DEFAULT_MIN_VOTES_TO_END))
+        except (TypeError, ValueError):
+            min_votes = _DEFAULT_MIN_VOTES_TO_END
+        self.min_votes_to_end = max(0, min_votes)
 
         lookups: Dict[str, LookupEntry] = {}
         for key, value in (data.get("lookups") or {}).items():
@@ -386,7 +429,7 @@ class VoteSession:
 
 
 class VotingCog(commands.Cog, name="Voting"):
-    """Run ranked-choice votes among people in a voice channel. Needs 3+ people — smaller groups should just talk it out."""
+    """Run ranked-choice votes among people in a voice channel. Needs a minimum headcount to start (configurable, default 3) — smaller groups should just talk it out."""
 
     COG_EMOJI = "🗳️"
 
@@ -442,7 +485,7 @@ class VotingCog(commands.Cog, name="Voting"):
         total = len(session.participants)
         votes_cast = sum(1 for p in session.participants.values() if p.status == "voted")
         responded = sum(1 for p in session.participants.values() if p.status != "pending")
-        can_end = votes_cast >= _MIN_VOTES_TO_END
+        can_end = votes_cast >= self.config.min_votes_to_end
         return votes_cast, responded, total, can_end
 
     def _build_embed(self, session: VoteSession, finished: bool = False, cancelled: bool = False) -> discord.Embed:
@@ -491,9 +534,11 @@ class VotingCog(commands.Cog, name="Voting"):
 
         if not finished:
             votes_cast, responded, total, _ = self._end_vote_status(session)
-            embed.set_footer(
-                text=f"{votes_cast}/{_MIN_VOTES_TO_END} votes to end vote • {responded}/{total} responded"
-            )
+            if self.config.min_votes_to_end > 0:
+                votes_part = f"{votes_cast}/{self.config.min_votes_to_end} votes to end vote"
+            else:
+                votes_part = "no votes required to end vote"
+            embed.set_footer(text=f"{votes_part} • {responded}/{total} responded")
 
         return embed
 
@@ -679,7 +724,7 @@ class VotingCog(commands.Cog, name="Voting"):
 
         if not can_end:
             return (
-                f"⚠️ Not enough votes yet ({votes_cast}/{_MIN_VOTES_TO_END} votes cast — "
+                f"⚠️ Not enough votes yet ({votes_cast}/{self.config.min_votes_to_end} votes cast — "
                 f"abstentions don't count toward this; {responded}/{total} have responded)."
             )
 
@@ -829,8 +874,10 @@ class VotingCog(commands.Cog, name="Voting"):
         for their ranked picks. Use !end_vote (or the button) once everyone's
         responded.
 
-        Requires at least 3 people in the channel. With just 1 or 2 of you,
-        skip the ceremony and talk it out directly.
+        Requires at least features.min_participants_to_start people in the
+        channel (default 3; configurable in voting_config.yaml, down to 0
+        to remove the check). Below that, skip the ceremony and talk it
+        out directly.
         """
         self.config.reload()
 
@@ -848,10 +895,12 @@ class VotingCog(commands.Cog, name="Voting"):
         voice_channel = ctx.author.voice.channel
         members = [m for m in voice_channel.members if not m.bot]
 
-        if len(members) < 3:
+        if len(members) < self.config.min_participants_to_start:
+            if self.config.sound_effects_enabled:
+                self.sounds.fire(ctx.guild, voice_channel, "too_few", volume=self.config.sound_effects_volume)
             await ctx.reply(
-                "Need at least 3 people in the voice channel to hold a vote — "
-                "with only 1 or 2 of you, just talk it out instead!",
+                f"Need at least {self.config.min_participants_to_start} people in the voice channel to hold a "
+                "vote — with fewer than that, just talk it out instead!",
                 mention_author=False,
             )
             return
@@ -890,9 +939,11 @@ class VotingCog(commands.Cog, name="Voting"):
     async def end_vote(self, ctx: commands.Context):
         """Tally votes and announce the winner.
 
-        Requires at least 3 actual votes to have been cast — abstentions
-        don't count toward this. Ties automatically trigger a tie-breaker
-        round instead of ending the vote.
+        Requires at least features.min_votes_to_end actual votes to have
+        been cast (default 3; configurable in voting_config.yaml, down to
+        0 to remove the check) — abstentions don't count toward this.
+        Ties automatically trigger a tie-breaker round instead of ending
+        the vote.
         """
         error = await self._perform_end_vote(ctx.guild, lambda payload: self._reply_payload(ctx, payload))
         if error:

@@ -14,6 +14,21 @@ features:
   # but can distort - kept clamped to 2.0 max. Defaults to 0.5 so a clip
   # recorded at full volume doesn't blast anyone.
   sound_effects_volume: 0.5
+ 
+  # Fewer than this many people in the voice channel and !start_vote
+  # refuses to start ("just talk it out instead"). 0 removes the check
+  # entirely - a vote can start with any number of people, even 1.
+  min_participants_to_start: 3
+ 
+  # !end_vote needs at least this many actual votes cast before it'll
+  # tally and announce a winner - abstentions don't count toward this,
+  # though they still show up as a response. 0 removes the check entirely
+  # - !end_vote works even with zero votes cast (handled as "no winner").
+  # Note: if min_participants_to_start is 3 (or more) and this is left at
+  # its own default of 3, a vote can deadlock if anyone abstains, since
+  # that leaves only 2 people who can still vote - !cancel_vote is the way
+  # out of that one. Lowering this value avoids the deadlock.
+  min_votes_to_end: 3
 
 # Lookup table: short vote keys -> full title (+ optional web link).
 # People still vote using the short key (e.g. "oam") - results, the tie
