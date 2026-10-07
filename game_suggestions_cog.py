@@ -9,6 +9,7 @@ Filter rules
   - Within a group, selected buttons combine as OR (Mac + Remote Play = games
     that are Mac-compatible OR remote-play; RTS + Party = RTS OR party games).
   - Between groups they combine as AND (Mac + RTS = Mac-compatible RTS games).
+    "Low effort" is its own group, so it narrows whatever else is selected.
   - Person buttons hide anything that person dislikes.
 
 Config is auto-created next to this file on first run and re-read on every
@@ -32,6 +33,7 @@ CONFIG_PATH = Path(__file__).parent / "games.yaml"
 
 MAC_EMOJI = "🍎"
 REMOTE_EMOJI = "🎮"
+LOW_EFFORT_EMOJI = "🛋️"
 
 # key -> (display label, emoji). Any other genre you write in the YAML still works;
 # it just gets no emoji and is sorted after these.
@@ -65,6 +67,7 @@ TEMPLATE = '''\
 #   url             - optional; http(s) links become clickable
 #   mac_compatible  - true/false (shows a 🍎 tag)
 #   remote_play     - true/false (shows a 🎮 tag)
+#   low_effort      - true/false (shows a 🛋️ tag): easy to pick up, fine to play tired or chatting
 #   genre           - one genre or a list: genre: rts   or   genre: [shooter, coop]
 #                     Built-ins: rts, party, shooter, sandbox, coop. Any other word also works.
 #                     A game with several genres is listed under each one.
@@ -80,11 +83,13 @@ games:
   #   url: "https://store.steampowered.com/app/730/"
   #   mac_compatible: false
   #   remote_play: false
+  #   low_effort: false
   #   genre: shooter
   # - title: "Stardew Valley"
   #   url: "https://store.steampowered.com/app/413150/"
   #   mac_compatible: true
   #   remote_play: true
+  #   low_effort: true
   #   genre: [sandbox, coop]
 
 players:
@@ -127,6 +132,7 @@ class Game:
     mac_compatible: bool
     remote_play: bool
     genres: tuple = ()   # normalised genre keys
+    low_effort: bool = False
 
 
 @dataclass(frozen=True)
@@ -206,6 +212,7 @@ def load_config(path: Path = CONFIG_PATH) -> Config:
             mac_compatible=_as_bool(entry.get("mac_compatible", False)),
             remote_play=_as_bool(entry.get("remote_play", False)),
             genres=tuple(genre_keys),
+            low_effort=_as_bool(entry.get("low_effort", False)),
         ))
 
     known_titles = {_norm(g.title) for g in cfg.games}
@@ -245,11 +252,12 @@ def load_config(path: Path = CONFIG_PATH) -> Config:
 # Filtering / formatting
 # --------------------------------------------------------------------------- #
 
-def filter_games(games, players, *, mac_only: bool, remote_only: bool, genres: set, avoid_ids: set):
+def filter_games(games, players, *, mac_only: bool, remote_only: bool, genres: set,
+                 avoid_ids: set, low_effort_only: bool = False):
     """Return (games to show, number hidden purely by dislikes).
 
     Platform buttons are OR'd together, genre buttons are OR'd together, and the
-    two groups are AND'd. Dislikes are applied last.
+    groups (platform, genre, low effort) are AND'd. Dislikes are applied last.
     """
     platform_active = mac_only or remote_only
 
@@ -261,7 +269,10 @@ def filter_games(games, players, *, mac_only: bool, remote_only: bool, genres: s
     def genre_ok(g: Game) -> bool:
         return not genres or bool(genres.intersection(g.genres))
 
-    pool = [g for g in games if platform_ok(g) and genre_ok(g)]
+    pool = [
+        g for g in games
+        if platform_ok(g) and genre_ok(g) and (not low_effort_only or g.low_effort)
+    ]
 
     avoided = set()
     for p in players:
@@ -285,6 +296,7 @@ def format_game(game: Game) -> str:
     tags = " ".join(t for t in (
         MAC_EMOJI if game.mac_compatible else "",
         REMOTE_EMOJI if game.remote_play else "",
+        LOW_EFFORT_EMOJI if game.low_effort else "",
     ) if t)
     return f"• {name} {tags}".rstrip()[:MAX_FIELD_CHARS]
 
@@ -320,8 +332,8 @@ class GameFilterView(discord.ui.View):
     """
     Embed + toggle buttons.
 
-    Button keys: 'mac', 'remote', 'reset', ('genre', key), or a player's Discord ID (int).
-    Layout: row 0 = Mac / Remote Play / Show everything, then genre rows, then person rows.
+    Button keys: 'mac', 'remote', 'low', 'reset', ('genre', key), or a player's Discord ID (int).
+    Layout: row 0 = Mac / Remote Play / Low effort / Show everything, then genre rows, then person rows.
     """
 
     def __init__(self, config: Config, *, channel=None, present_ids: Optional[set] = None):
@@ -332,6 +344,7 @@ class GameFilterView(discord.ui.View):
 
         self.mac_only = False
         self.remote_only = False
+        self.low_effort_only = False
         self.genres: set = set()
         present_ids = present_ids or set()
         # Auto-avoid anyone configured who is in the voice channel right now.
@@ -342,6 +355,7 @@ class GameFilterView(discord.ui.View):
         # Row 0: platform filters + reset
         self._add_button("mac", "Mac", MAC_EMOJI, row=0)
         self._add_button("remote", "Remote Play", REMOTE_EMOJI, row=0)
+        self._add_button("low", "Low effort", LOW_EFFORT_EMOJI, row=0)
         self._add_button("reset", "Show everything", "🔄", row=0, toggle=False)
 
         # Genre rows (part of the "filters" bar, above the dislikes bar)
@@ -376,6 +390,8 @@ class GameFilterView(discord.ui.View):
             return self.mac_only
         if key == "remote":
             return self.remote_only
+        if key == "low":
+            return self.low_effort_only
         if isinstance(key, tuple):
             return key[1] in self.genres
         return key in self.avoid_ids
@@ -396,8 +412,10 @@ class GameFilterView(discord.ui.View):
             self.mac_only = not self.mac_only
         elif key == "remote":
             self.remote_only = not self.remote_only
+        elif key == "low":
+            self.low_effort_only = not self.low_effort_only
         elif key == "reset":
-            self.mac_only = self.remote_only = False
+            self.mac_only = self.remote_only = self.low_effort_only = False
             self.genres.clear()
             self.avoid_ids.clear()
         elif isinstance(key, tuple):
@@ -413,6 +431,7 @@ class GameFilterView(discord.ui.View):
             cfg.games, cfg.players,
             mac_only=self.mac_only, remote_only=self.remote_only,
             genres=self.genres, avoid_ids=self.avoid_ids,
+            low_effort_only=self.low_effort_only,
         )
 
         # --- header line describing what's active ---
@@ -428,6 +447,8 @@ class GameFilterView(discord.ui.View):
             notes.append(" or ".join(platforms))
         if self.genres:
             notes.append("Genre: " + " or ".join(cfg.label(k) for k in cfg.ordered_genres() if k in self.genres))
+        if self.low_effort_only:
+            notes.append(f"{LOW_EFFORT_EMOJI} Low effort")
         avoiding = [p.name for p in cfg.players if p.discord_id in self.avoid_ids]
         if avoiding:
             notes.append("🚫 Avoiding: " + ", ".join(avoiding))
@@ -474,7 +495,7 @@ class GameFilterView(discord.ui.View):
         if description_parts:
             embed.description = "\n\n".join(description_parts)
 
-        footer = f"{MAC_EMOJI} Mac compatible · {REMOTE_EMOJI} Remote Play"
+        footer = f"{MAC_EMOJI} Mac · {REMOTE_EMOJI} Remote Play · {LOW_EFFORT_EMOJI} Low effort"
         if hidden:
             footer += f" · {hidden} hidden by dislikes"
         embed.set_footer(text=footer)
@@ -512,9 +533,10 @@ class GameSuggestionsCog(commands.Cog, name="Game Suggestions"):
     async def suggest_games(self, ctx: commands.Context):
         """Suggest games to play, grouped by genre, with filter buttons.
 
-        Lists every game in games.yaml (🍎 = Mac compatible, 🎮 = Remote Play).
-        Use the top buttons to filter: Mac and Remote Play combine as "either",
-        as do genres; the two groups combine as "both".
+        Lists every game in games.yaml (🍎 = Mac compatible, 🎮 = Remote Play,
+        🛋️ = low effort). Use the top buttons to filter: Mac and Remote Play
+        combine as "either", as do genres; the groups (platform, genre,
+        low effort) combine as "both".
 
         If you're in a voice channel, games disliked by anyone in it are
         hidden automatically. A button per person lets you toggle that, and
