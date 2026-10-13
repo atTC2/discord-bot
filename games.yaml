@@ -2,6 +2,7 @@
 # remote_play = works via Steam Remote Play Together / party-style local multiplayer.
 # genre = one genre or a list (built-ins: rts, party, shooter, sandbox, coop).
 # low_effort = subjective: easy to pick up, fine to play tired or while chatting.
+# disabled = true hides the game everywhere (keeps the entry so you can re-enable it).
 
 games:
   # --- Co-op / survival / sandbox ---
@@ -11,96 +12,112 @@ games:
     remote_play: true
     low_effort: true
     genre: [shooter, coop]
+    disabled: false
   - title: "Satisfactory"
     url: "https://store.steampowered.com/app/526870"
     mac_compatible: false
     remote_play: false
     low_effort: false
     genre: [sandbox, coop]
+    disabled: false
   - title: "Grand Theft Auto V"
     url: "https://store.steampowered.com/app/271590"
     mac_compatible: false
     remote_play: false
     low_effort: true
     genre: sandbox
+    disabled: false
   - title: "Counter-Strike 2"
     url: "https://store.steampowered.com/app/730"
     mac_compatible: false
     remote_play: false
     low_effort: false
     genre: shooter
+    disabled: false
   - title: "Astroneer"
     url: "https://store.steampowered.com/app/361420"
     mac_compatible: false
     remote_play: false
     low_effort: false
     genre: [sandbox, coop]
+    disabled: true
   - title: "Minecraft"
     url: "https://www.minecraft.net/"
     mac_compatible: true   # Java Edition
     remote_play: false
     low_effort: true
     genre: [sandbox, coop]
+    disabled: false
   - title: "Barotrauma"
     url: "https://store.steampowered.com/app/602960"
     mac_compatible: true
     remote_play: false
     low_effort: false
     genre: coop
+    disabled: false
   - title: "Space Engineers"
     url: "https://store.steampowered.com/app/244850"
     mac_compatible: false
     remote_play: false
     low_effort: false
     genre: [sandbox, coop]
+    disabled: false
   - title: "Factorio"
     url: "https://store.steampowered.com/app/427520"
     mac_compatible: true
     remote_play: false
     low_effort: false
     genre: [sandbox, coop]
+    disabled: false
   - title: "Helldivers 2"
     url: "https://store.steampowered.com/app/553850"
     mac_compatible: false
     remote_play: false
     low_effort: false
     genre: [shooter, coop]
+    disabled: false
   - title: "War Thunder"
     url: "https://store.steampowered.com/app/236390"
     mac_compatible: true
     remote_play: false
     low_effort: false
     genre: shooter
+    disabled: true
   - title: "Deep Rock Galactic"
     url: "https://store.steampowered.com/app/548430"
     mac_compatible: false
     remote_play: false
     low_effort: false
     genre: [shooter, coop]
+    disabled: false
   - title: "Vampire Survivors"
     url: "https://store.steampowered.com/app/1794680"
     mac_compatible: true
     remote_play: true   # local co-op up to 4
     low_effort: true
     genre: coop
+    disabled: false
   - title: "Magicka 2"
     url: "https://store.steampowered.com/app/238370"
     mac_compatible: false
     remote_play: false
     low_effort: false
     genre: coop
+    disabled: true
   - title: "Vampire: The Masquerade - Bloodhunt"
     url: "https://store.steampowered.com/app/760160"
     mac_compatible: false
     remote_play: false
     low_effort: false
     genre: shooter
+    disabled: false
   - title: "Project Zomboid"
     url: "https://store.steampowered.com/app/108600"
     mac_compatible: true
     remote_play: false
     low_effort: false
     genre: [sandbox, coop]
+    disabled: false
 
   # --- Party games ---
   - title: "Left 4 Dead 2"
@@ -109,96 +126,112 @@ games:
     remote_play: false
     low_effort: true
     genre: [shooter, coop]
+    disabled: false
   - title: "Ultimate Chicken Horse"
     url: "https://store.steampowered.com/app/386940"
     mac_compatible: true
     remote_play: true
     low_effort: true
     genre: party
+    disabled: false
   - title: "Unrailed!"
     url: "https://store.steampowered.com/app/1016920"
     mac_compatible: true
     remote_play: true
     low_effort: false
     genre: [party, coop]
+    disabled: true
   - title: "Overcooked!"
     url: "https://store.steampowered.com/app/448510"
     mac_compatible: true
     remote_play: true
     low_effort: false
     genre: [party, coop]
+    disabled: false
   - title: "Overcooked! 2"
     url: "https://store.steampowered.com/app/728880"
     mac_compatible: true   # Mac build had input problems on recent macOS; Steam's "crossplay" beta branch was the workaround
     remote_play: true
     low_effort: false
     genre: [party, coop]
+    disabled: false
   - title: "Unrailed! 2: Back on Track"
     url: "https://store.steampowered.com/app/2211170"
     mac_compatible: false
     remote_play: true
     low_effort: false
     genre: [party, coop]
+    disabled: false
   - title: "Slapshot: Rebound"
     url: "https://store.steampowered.com/app/1173370"
     mac_compatible: false
     remote_play: true
     low_effort: false
     genre: party
+    disabled: false
   - title: "Rocket League"
     url: "https://www.rocketleague.com/"   # no longer on Steam
     mac_compatible: false
     remote_play: false
     low_effort: false
     genre: party
+    disabled: false
   - title: "Tabletop Simulator"
     url: "https://store.steampowered.com/app/286160"
     mac_compatible: true
     remote_play: false
     low_effort: false
     genre: [party, sandbox]
+    disabled: false
   - title: "GeoGuessr"
     url: "https://www.geoguessr.com/"
     mac_compatible: true   # browser
     remote_play: false
     low_effort: true
     genre: party
+    disabled: false
   - title: "Mount Your Friends"
     url: "https://store.steampowered.com/app/296470/Mount_Your_Friends/"
     mac_compatible: false
     remote_play: true
     low_effort: true
     genre: party
+    disabled: false
   - title: "Worms W.M.D"
     url: "https://store.steampowered.com/app/327030"
     mac_compatible: true
     remote_play: true
     low_effort: true
     genre: party
+    disabled: false
   - title: "Golf With Your Friends"
     url: "https://store.steampowered.com/app/431240"
     mac_compatible: true
     remote_play: true
     low_effort: true
     genre: party
+    disabled: false
   - title: "PEAK"
     url: "https://store.steampowered.com/app/3527290"
     mac_compatible: false
     remote_play: false
     low_effort: true
     genre: coop
+    disabled: false
   - title: "Zeepkist"
     url: "https://store.steampowered.com/app/1440670"
     mac_compatible: false
     remote_play: false
     low_effort: true
     genre: party
+    disabled: false
   - title: "Meccha Chameleon"
     url: "https://store.steampowered.com/app/4704690"
     mac_compatible: false
     remote_play: false
     low_effort: true
     genre: party
+    disabled: false
 
   # --- Strategy ---
   - title: "Northgard"
@@ -207,72 +240,84 @@ games:
     remote_play: false
     low_effort: false
     genre: rts
+    disabled: false
   - title: "Age of Empires II: Definitive Edition"
     url: "https://store.steampowered.com/app/813780"
     mac_compatible: false
     remote_play: false
     low_effort: false
     genre: rts
+    disabled: true
   - title: "Age of Empires III: Definitive Edition"
     url: "https://store.steampowered.com/app/933110"
     mac_compatible: false
     remote_play: false
     low_effort: false
     genre: rts
+    disabled: false
   - title: "Age of Mythology: Retold"
     url: "https://store.steampowered.com/app/1934680"
     mac_compatible: false
     remote_play: false
     low_effort: false
     genre: rts
+    disabled: false
   - title: "Cossacks 3"
     url: "https://store.steampowered.com/app/333420"
     mac_compatible: true
     remote_play: false
     low_effort: false
     genre: rts
+    disabled: false
   - title: "Halo Wars: Definitive Edition"
     url: "https://store.steampowered.com/app/459220"
     mac_compatible: false
     remote_play: false
     low_effort: false
     genre: rts
+    disabled: false
   - title: "Planetary Annihilation: TITANS"
     url: "https://store.steampowered.com/app/386070"
     mac_compatible: true
     remote_play: false
     low_effort: false
     genre: rts
+    disabled: false
   - title: "Rise of Nations: Extended Edition"
     url: "https://store.steampowered.com/app/287450"
     mac_compatible: false
     remote_play: false
     low_effort: false
     genre: rts
+    disabled: false
   - title: "Rusted Warfare"
     url: "https://store.steampowered.com/app/647960"
     mac_compatible: true
     remote_play: false
     low_effort: false
     genre: rts
+    disabled: false
   - title: "Stronghold 2"
     url: "https://store.steampowered.com/app/40960"
     mac_compatible: false
     remote_play: false
     low_effort: false
     genre: rts
+    disabled: false
   - title: "Warzone 2100"
     url: "https://wz2100.net/"   # free/open source
     mac_compatible: true
     remote_play: false
     low_effort: false
     genre: rts
+    disabled: false
   - title: "Warcraft III: Reforged"
     url: "https://warcraft3.blizzard.com/"   # Battle.net, not Steam
     mac_compatible: true
     remote_play: false
     low_effort: false
     genre: rts
+    disabled: true
 
 players:
   - name: "bear of polar"

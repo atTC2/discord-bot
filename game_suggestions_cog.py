@@ -68,6 +68,7 @@ TEMPLATE = '''\
 #   mac_compatible  - true/false (shows a 🍎 tag)
 #   remote_play     - true/false (shows a 🎮 tag)
 #   low_effort      - true/false (shows a 🛋️ tag): easy to pick up, fine to play tired or chatting
+#   disabled        - true to hide the game everywhere without deleting its entry (default false)
 #   genre           - one genre or a list: genre: rts   or   genre: [shooter, coop]
 #                     Built-ins: rts, party, shooter, sandbox, coop. Any other word also works.
 #                     A game with several genres is listed under each one.
@@ -84,6 +85,7 @@ games:
   #   mac_compatible: false
   #   remote_play: false
   #   low_effort: false
+  #   disabled: false
   #   genre: shooter
   # - title: "Stardew Valley"
   #   url: "https://store.steampowered.com/app/413150/"
@@ -179,11 +181,17 @@ def load_config(path: Path = CONFIG_PATH) -> Config:
         raise ConfigError(f"`{path.name}` should contain top-level `games:` and `players:` keys.")
 
     cfg = Config()
+    disabled_titles = set()
 
     for i, entry in enumerate(raw.get("games") or [], start=1):
         title = str(entry.get("title", "")).strip() if isinstance(entry, dict) else ""
         if not title:
             cfg.warnings.append(f"games entry #{i} skipped (needs a `title`).")
+            continue
+        if _as_bool(entry.get("disabled", False)):
+            # Never listed, and its genres don't get buttons; remember the title so
+            # players' `dislikes` entries for it don't raise "unknown game" warnings.
+            disabled_titles.add(_norm(title))
             continue
         url = str(entry.get("url") or "").strip() or None
 
@@ -215,7 +223,7 @@ def load_config(path: Path = CONFIG_PATH) -> Config:
             low_effort=_as_bool(entry.get("low_effort", False)),
         ))
 
-    known_titles = {_norm(g.title) for g in cfg.games}
+    known_titles = {_norm(g.title) for g in cfg.games} | disabled_titles
 
     for i, entry in enumerate(raw.get("players") or [], start=1):
         if not isinstance(entry, dict):
