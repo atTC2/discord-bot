@@ -43,135 +43,145 @@ features:
 #
 # url is optional; omit it for a plain title with no link.
 lookups:
-  aom:
+  oam:
     title: "Age of Mythology"
     url: "https://store.steampowered.com/app/266840/Age_of_Mythology_Extended_Edition/"
-  age of empires iii:
-    title: "Age of Empires III"
-    url: "https://store.steampowered.com/app/933110/Age_of_Empires_III_Definitive_Edition/"
-  cossacks 3:
-    title: "Cossacks 3"
-    url: "https://store.steampowered.com/app/333420/Cossacks_3/"
-  helldivers 2:
-    title: "HELLDIVERS II"
-    url: "https://store.steampowered.com/app/553850"
-  northgard:
-    title: "Northgard"
-    url: "https://store.steampowered.com/app/466560/Northgard_Definitive_Edition/"
-  peak:
-    title: "PEAK"
-    url: "https://store.steampowered.com/app/3527290/PEAK/"
-  "planetary annihilation: titans":
-    title: "Planetary Annihilation: TITANS"
-    url: "https://store.steampowered.com/app/386070/Planetary_Annihilation_TITANS/"
-  pubg:
-    title: "PUBG: BATTLEGROUNDS"
-    url: "https://store.steampowered.com/app/578080/PUBG_BATTLEGROUNDS/"
-  rusted warfare:
-    title: "Rusted Warfare - RTS"
-    url: "https://store.steampowered.com/app/647960/Rusted_Warfare__RTS/"
-  stronghold 2:
-    title: "Stronghold 2"
-    url: "https://store.steampowered.com/app/40960/Stronghold_2_Steam_Edition/"
-  ultimate chicken horse:
-    title: "Ultimate Chicken Horse"
-    url: "https://store.steampowered.com/app/386940/Ultimate_Chicken_Horse/"
-  zeepkist:
-    title: "Zeepkist"
-    url: "https://store.steampowered.com/app/1440670/Zeepkist/"
-  satisfactory:
-    title: "Satisfactory"
-    url: "https://store.steampowered.com/app/526870/Satisfactory/"
-  gta v:
-    title: "Grand Theft Auto V"
-    url: "https://store.steampowered.com/app/3240220/Grand_Theft_Auto_V_Enhanced/"
-  cs2:
-    title: "Counter-Strike 2"
-    url: "https://store.steampowered.com/app/730/CounterStrike_2/"
-  astroneer:
-    title: "ASTRONEER"
-    url: "https://store.steampowered.com/app/361420/ASTRONEER/"
-  earth defense force:
+
+  # --- Generated from games.yaml (enabled games only). Key = the full
+  # --- title in lowercase, since that's how votes are matched.
+  "earth defense force 6":
     title: "Earth Defense Force 6"
     url: "https://store.steampowered.com/app/2291060"
-  bg3:
-    title: "Baldur's Gate 3"
-    url: "https://store.steampowered.com/app/1086940"
-  minecraft:
+  "satisfactory":
+    title: "Satisfactory"
+    url: "https://store.steampowered.com/app/526870"
+  "grand theft auto v":
+    title: "Grand Theft Auto V"
+    url: "https://store.steampowered.com/app/271590"
+  "counter-strike 2":
+    title: "Counter-Strike 2"
+    url: "https://store.steampowered.com/app/730"
+  "minecraft":
     title: "Minecraft"
     url: "https://www.minecraft.net/"
-  barotrauma:
-    title: "Barotrauma"
-    url: "https://store.steampowered.com/app/602960"
-  space engineers:
+  "space engineers":
     title: "Space Engineers"
     url: "https://store.steampowered.com/app/244850"
-  factorio:
+  "factorio":
     title: "Factorio"
     url: "https://store.steampowered.com/app/427520"
-  green hell:
-    title: "Green Hell"
-    url: "https://store.steampowered.com/app/815370"
-  war thunder:
-    title: "War Thunder"
-    url: "https://store.steampowered.com/app/236390"
-  deep rock galactic:
+  "helldivers 2":
+    title: "Helldivers 2"
+    url: "https://store.steampowered.com/app/553850"
+  "deep rock galactic":
     title: "Deep Rock Galactic"
     url: "https://store.steampowered.com/app/548430"
-  vampire survivors:
+  "vampire survivors":
     title: "Vampire Survivors"
     url: "https://store.steampowered.com/app/1794680"
-  magicka 2:
-    title: "Magicka 2"
-    url: "https://store.steampowered.com/app/238370"
-  bloodhunt:
+  "vampire: the masquerade - bloodhunt":
     title: "Vampire: The Masquerade - Bloodhunt"
     url: "https://store.steampowered.com/app/760160"
-  project zomboid:
+  "project zomboid":
     title: "Project Zomboid"
     url: "https://store.steampowered.com/app/108600"
-  l4d2:
+  "left 4 dead 2":
     title: "Left 4 Dead 2"
     url: "https://store.steampowered.com/app/550"
-  unrailed:
-    title: "Unrailed!"
-    url: "https://store.steampowered.com/app/1016920"
-  slapshot:
+  "ultimate chicken horse":
+    title: "Ultimate Chicken Horse"
+    url: "https://store.steampowered.com/app/386940"
+  "overcooked!":
+    title: "Overcooked!"
+    url: "https://store.steampowered.com/app/448510"
+  "overcooked! 2":
+    title: "Overcooked! 2"
+    url: "https://store.steampowered.com/app/728880"
+  "unrailed! 2: back on track":
+    title: "Unrailed! 2: Back on Track"
+    url: "https://store.steampowered.com/app/2211170"
+  "slapshot: rebound":
     title: "Slapshot: Rebound"
     url: "https://store.steampowered.com/app/1173370"
-  rocket league:
+  "rocket league":
     title: "Rocket League"
     url: "https://www.rocketleague.com/"
-  tabletop simulator:
+  "tabletop simulator":
     title: "Tabletop Simulator"
     url: "https://store.steampowered.com/app/286160"
-  geoguessr:
+  "geoguessr":
     title: "GeoGuessr"
     url: "https://www.geoguessr.com/"
-  mount your friends:
+  "mount your friends":
     title: "Mount Your Friends"
     url: "https://store.steampowered.com/app/296470/Mount_Your_Friends/"
-  worms:
+  "worms w.m.d":
     title: "Worms W.M.D"
     url: "https://store.steampowered.com/app/327030"
-  golf with your friends:
+  "golf with your friends":
     title: "Golf With Your Friends"
     url: "https://store.steampowered.com/app/431240"
-  meccha chameleon:
+  "peak":
+    title: "PEAK"
+    url: "https://store.steampowered.com/app/3527290"
+  "zeepkist":
+    title: "Zeepkist"
+    url: "https://store.steampowered.com/app/1440670"
+  "meccha chameleon":
     title: "Meccha Chameleon"
     url: "https://store.steampowered.com/app/4704690"
-  aoe2:
-    title: "Age of Empires II: Definitive Edition"
-    url: "https://store.steampowered.com/app/813780"
-  halo wars:
+  "northgard":
+    title: "Northgard"
+    url: "https://store.steampowered.com/app/466560"
+  "age of empires iii: definitive edition":
+    title: "Age of Empires III: Definitive Edition"
+    url: "https://store.steampowered.com/app/933110"
+  "age of mythology: retold":
+    title: "Age of Mythology: Retold"
+    url: "https://store.steampowered.com/app/1934680"
+  "cossacks 3":
+    title: "Cossacks 3"
+    url: "https://store.steampowered.com/app/333420"
+  "halo wars: definitive edition":
     title: "Halo Wars: Definitive Edition"
     url: "https://store.steampowered.com/app/459220"
-  rise of nations:
+  "planetary annihilation: titans":
+    title: "Planetary Annihilation: TITANS"
+    url: "https://store.steampowered.com/app/386070"
+  "rise of nations: extended edition":
     title: "Rise of Nations: Extended Edition"
     url: "https://store.steampowered.com/app/287450"
-  warzone 2100:
+  "rusted warfare":
+    title: "Rusted Warfare"
+    url: "https://store.steampowered.com/app/647960"
+  "stronghold 2":
+    title: "Stronghold 2"
+    url: "https://store.steampowered.com/app/40960"
+  "warzone 2100":
     title: "Warzone 2100"
     url: "https://wz2100.net/"
-  wc3:
-    title: "Warcraft III: Reforged"
-    url: "https://warcraft3.blizzard.com/"
+
+  # --- Shorthand keys (same games, shorter to type). Each is a separate
+  # --- nominee when voted for, so votes for 'zomboid' and
+  # --- 'project zomboid' are NOT combined.
+  "zomboid":
+    title: "Project Zomboid"
+    url: "https://store.steampowered.com/app/108600"
+  "l4d2":
+    title: "Left 4 Dead 2"
+    url: "https://store.steampowered.com/app/550"
+  "cs2":
+    title: "Counter-Strike 2"
+    url: "https://store.steampowered.com/app/730"
+  "drg":
+    title: "Deep Rock Galactic"
+    url: "https://store.steampowered.com/app/548430"
+  "edf6":
+    title: "Earth Defense Force 6"
+    url: "https://store.steampowered.com/app/2291060"
+  "aoe3":
+    title: "Age of Empires III: Definitive Edition"
+    url: "https://store.steampowered.com/app/933110"
+  "aom":
+    title: "Age of Mythology: Retold"
+    url: "https://store.steampowered.com/app/1934680"

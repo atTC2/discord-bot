@@ -28,8 +28,13 @@ Commands:
                     restricted to the tied nominees.
     !cancel_vote  - closes an in-progress vote without printing results.
 
-The live-updating message also carries three buttons doing the same things
-as the three commands above, plus "Include Previous Runners-Up" (see below).
+The live-updating message also carries buttons: End Vote and Cancel Vote do
+the same things as the commands above, "Include Previous Runners-Up" is
+described below, and "Sync Voters" re-checks who's in the voice channel --
+people still there keep their state (a cast vote isn't undone), people who
+left are removed along with any vote they cast (it drops out of the tally
+and the votes-to-end count), and people who joined are added and DMed the
+voting prompt.
 
 Voting (via DM to the bot):
     Reply with up to 3 lines, most preferred first, e.g.:
@@ -560,6 +565,14 @@ class VotingCog(commands.Cog, name="Voting"):
         include_button.callback = include_callback
         view.add_item(include_button)
 
+        sync_button = discord.ui.Button(label="Sync Voters", style=discord.ButtonStyle.grey)
+
+        async def sync_callback(interaction: discord.Interaction):
+            await self._on_sync_voters_button(interaction, guild_id)
+
+        sync_button.callback = sync_callback
+        view.add_item(sync_button)
+
         end_button = discord.ui.Button(
             label="End Vote",
             style=discord.ButtonStyle.green,
@@ -801,6 +814,51 @@ class VotingCog(commands.Cog, name="Voting"):
         if error:
             await interaction.followup.send(error, ephemeral=True)
 
+    async def _on_sync_voters_button(self, interaction: discord.Interaction, guild_id: int):
+        """Re-snapshots who's in the tracked voice channel. People still in
+        the room keep their state (a cast vote isn't undone); people who
+        have left are removed along with any vote they cast (so it drops
+        out of the tally and the votes-to-end count); people who have
+        joined are added as not-yet-voted and DMed the prompt."""
+        await interaction.response.defer(ephemeral=True)
+
+        session = self.active_votes.get(guild_id)
+        if session is None:
+            await interaction.followup.send("This vote has already ended.", ephemeral=True)
+            return
+
+        current = {m.id: m for m in session.voice_channel.members if not m.bot}
+        left = [p for uid, p in session.participants.items() if uid not in current]
+        joined = [m for uid, m in current.items() if uid not in session.participants]
+
+        for p in left:
+            del session.participants[p.member.id]
+        for m in joined:
+            session.participants[m.id] = Participant(member=m)
+
+        await self._update_tracking_message(session)
+
+        failed_dms = []
+        for m in joined:
+            try:
+                await m.send(self._format_prompt(session), view=self._build_abstain_view())
+            except discord.Forbidden:
+                failed_dms.append(m.display_name)
+
+        if not left and not joined:
+            summary = "Already up to date — nobody has joined or left."
+        else:
+            parts = []
+            if joined:
+                parts.append("➕ Added: " + ", ".join(m.display_name for m in joined))
+            if left:
+                parts.append("➖ Removed: " + ", ".join(p.member.display_name for p in left))
+            summary = "\n".join(parts)
+        if failed_dms:
+            summary += f"\n⚠️ Couldn't DM: {', '.join(failed_dms)}."
+
+        await interaction.followup.send(summary, ephemeral=True)
+
     async def _on_include_history_button(self, interaction: discord.Interaction, guild_id: int):
         await interaction.response.defer(ephemeral=True)
 
@@ -851,7 +909,10 @@ class VotingCog(commands.Cog, name="Voting"):
     async def _on_abstain_button(self, interaction: discord.Interaction):
         session, participant = self._find_participant(interaction.user.id)
         if session is None:
-            await interaction.response.send_message("This vote has already ended.", ephemeral=True)
+            await interaction.response.send_message(
+                "You're not part of an active vote (it may have ended, or you left the voice channel and were synced out).",
+                ephemeral=True,
+            )
             return
         if participant.status != "pending":
             await interaction.response.send_message(
