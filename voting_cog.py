@@ -84,21 +84,33 @@ re-read at the start of every command so edits need no restart):
         don't count toward it). 0 removes the check (!end_vote works even
         with zero votes cast -- handled as "no winner this round").
 
-    lookups:
-    Maps a short vote key (what people actually type/vote, e.g. "oam") to
-    a full display title and an optional url. Wherever a nominee is shown
-    in results, the tie announcement, or the runner-up history list, a
-    configured key is swapped for its title; keys with no entry just show
-    as typed. When url is set, that title becomes a clickable link (e.g.
-    "Age of Mythology" linking to its Steam store page) -- those messages
-    are sent as embeds specifically so the link renders, since Discord
-    only supports markdown links `[text](url)` inside embeds/interaction
-    responses, never in plain message content. Use an ordinary http(s)
-    page (a store page, a Spotify track, a YouTube video...) rather than
-    an app-specific protocol like steam:// -- Discord no longer renders
-    custom protocols as clickable links at all, but a plain web link works
-    everywhere, and most such pages show their own "Play"/"Launch" button
-    once you're signed in anyway.
+    lookups: a list of entries, each with a title, an optional url and an
+    optional list of aliases:
+
+        - title: "Project Zomboid"
+          url: "https://store.steampowered.com/app/108600"
+          aliases: [zomboid, pz]
+
+    A vote for the title or for any alias (case and extra spaces ignored)
+    is counted as a vote for that entry, so "zomboid" and "project
+    zomboid" combine into ONE nominee: one score, one runner-up streak, one
+    link. This happens when the vote is cast and again when it's tallied,
+    so an alias added mid-vote still merges; runner-up history saved under
+    an old alias is folded into the entry's current key on load (larger
+    streak wins). A voter who lists the same entry twice (say via two
+    aliases) only counts once, at their higher position. Votes matching no
+    entry show as typed, with no link, and are still tallied normally.
+    Wherever a nominee is shown (results, the tie announcement, the vote
+    confirmation DM, the runner-up history list) a matched entry shows its
+    title, as a clickable link when url is set. Results, the tie
+    announcement and the history list are sent as embeds specifically so
+    the link renders, since Discord only supports markdown links
+    `[text](url)` inside embeds/interaction responses, never in plain
+    message content. Use an ordinary http(s) page (a store page, a Spotify
+    track, a YouTube video...) rather than an app-specific protocol like
+    steam:// -- Discord no longer renders custom protocols as clickable
+    links at all. The older format (a mapping of typed key -> title/url)
+    still loads: each key becomes an alias of its title's entry.
 
 Sound effects:
     Off by default (features.sound_effects_enabled: false in
@@ -126,6 +138,7 @@ Sound effects:
 
 import asyncio
 import json
+import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -134,6 +147,8 @@ from typing import Awaitable, Callable, Dict, List, Optional, Union
 import discord
 import yaml
 from discord.ext import commands
+
+_log = logging.getLogger(__name__)
 
 # Matches a leading enumerator like "1.", "1)", "a.", "A)", "iii}" etc.
 _ENUM_RE = re.compile(r"^\s*[0-9a-zA-Z]{1,3}\s*[.\)\]\}]\s*")
@@ -182,22 +197,31 @@ features:
   # out of that one. Lowering this value avoids the deadlock.
   min_votes_to_end: 3
 
-# Lookup table: short vote keys -> full title (+ optional web link).
-# People still vote using the short key (e.g. "oam") - results, the tie
-# announcement, and the runner-up history list all show the full title
-# instead, as a clickable link whenever a url is given.
+# Lookup table: one entry per thing people might vote for.
 #
-# Use an ordinary http(s) page here (a store page, a Spotify track, a
+#   title    - the display name (required). Typing the title in a vote (any
+#              capitalisation) also counts as a vote for this entry.
+#   url      - optional web link; the title becomes a clickable link.
+#   aliases  - optional list of other things people might type. A vote for
+#              any alias is counted as a vote for this entry, so "zomboid"
+#              and "project zomboid" combine into ONE nominee with one
+#              score, one runner-up streak and one link.
+#
+# Matching ignores capitalisation and extra spaces. Entries with no match
+# just show as typed, with no link. If the same alias appears under two
+# entries, the first one wins (and a title always beats another entry's
+# alias).
+#
+# Use an ordinary http(s) page for url (a store page, a Spotify track, a
 # YouTube video...) rather than an app-specific protocol like steam:// -
 # Discord no longer renders custom protocols as clickable links at all,
 # but a plain web link works everywhere, and most of these pages show
 # their own "Play"/"Launch" button once you're signed in anyway.
-#
-# url is optional; omit it for a plain title with no link.
 lookups:
-  oam:
-    title: "Age of Mythology"
+  - title: "Age of Mythology"
     url: "https://store.steampowered.com/app/266840/Age_of_Mythology_Extended_Edition/"
+    aliases:
+      - oam
 """
 
 # Drop your own audio files here, named voting_started/voting_finished/
@@ -246,15 +270,21 @@ def _strip_enumeration(line: str) -> str:
     return _ENUM_RE.sub("", line).strip()
 
 
+def _normalize_key(text: str) -> str:
+    """Case-insensitive, whitespace-collapsed form used for all matching."""
+    return " ".join(str(text).lower().split())
+
+
 @dataclass
 class LookupEntry:
     title: str
     url: Optional[str] = None
+    aliases: List[str] = field(default_factory=list)
 
 
 class VotingConfig:
     """Loads voting_config.yaml: the sound-effects feature toggle, the
-    participant/vote minimums, and the key -> title/link lookup table.
+    participant/vote minimums, and the title/alias/link lookup table.
     Cheap to re-read, so callers reload it at the start of each command
     rather than caching forever - edits take effect on the next vote with
     no bot restart."""
@@ -267,7 +297,8 @@ class VotingConfig:
         self.sound_effects_volume: float = _DEFAULT_SOUND_VOLUME
         self.min_participants_to_start: int = _DEFAULT_MIN_PARTICIPANTS_TO_START
         self.min_votes_to_end: int = _DEFAULT_MIN_VOTES_TO_END
-        self.lookups: Dict[str, LookupEntry] = {}
+        self.lookups: Dict[str, LookupEntry] = {}      # canonical key -> entry
+        self.alias_map: Dict[str, str] = {}            # any title/alias -> canonical key
         self.reload()
 
     def reload(self) -> None:
@@ -298,18 +329,74 @@ class VotingConfig:
             min_votes = _DEFAULT_MIN_VOTES_TO_END
         self.min_votes_to_end = max(0, min_votes)
 
+        raw = data.get("lookups") or []
+        entries: List[LookupEntry] = []
+        if isinstance(raw, list):
+            for item in raw:
+                if not isinstance(item, dict) or not item.get("title"):
+                    continue
+                aliases = item.get("aliases") or []
+                if isinstance(aliases, (str, int, float)):
+                    aliases = [aliases]
+                entries.append(
+                    LookupEntry(
+                        title=str(item["title"]),
+                        url=item.get("url") or None,
+                        aliases=[str(a) for a in aliases],
+                    )
+                )
+        elif isinstance(raw, dict):
+            # Legacy format: {typed_key: {title, url}}. Each key becomes an
+            # alias of its title's entry, so duplicates of one title merge.
+            by_title: Dict[str, LookupEntry] = {}
+            for key, value in raw.items():
+                if not isinstance(value, dict) or not value.get("title"):
+                    continue
+                canonical = _normalize_key(value["title"])
+                entry = by_title.get(canonical)
+                if entry is None:
+                    entry = LookupEntry(title=str(value["title"]), url=value.get("url") or None)
+                    by_title[canonical] = entry
+                    entries.append(entry)
+                elif not entry.url and value.get("url"):
+                    entry.url = value["url"]
+                entry.aliases.append(str(key))
+
+        # canonical key (normalised title) -> entry; titles are registered
+        # first so a title always beats another entry's alias.
         lookups: Dict[str, LookupEntry] = {}
-        for key, value in (data.get("lookups") or {}).items():
-            if not isinstance(value, dict) or "title" not in value:
+        alias_map: Dict[str, str] = {}
+        for entry in entries:
+            canonical = _normalize_key(entry.title)
+            if canonical in lookups:
+                _log.warning("voting_config: duplicate title %r ignored", entry.title)
                 continue
-            lookups[str(key).lower()] = LookupEntry(
-                title=str(value["title"]),
-                url=value.get("url"),
-            )
+            lookups[canonical] = entry
+            alias_map[canonical] = canonical
+        for canonical, entry in lookups.items():
+            for alias in entry.aliases:
+                alias_key = _normalize_key(alias)
+                if not alias_key:
+                    continue
+                existing = alias_map.setdefault(alias_key, canonical)
+                if existing != canonical:
+                    _log.warning(
+                        "voting_config: alias %r for %r already belongs to %r; ignored",
+                        alias, entry.title, lookups[existing].title,
+                    )
         self.lookups = lookups
+        self.alias_map = alias_map
+
+    def resolve(self, text: str) -> str:
+        """Maps typed text to its canonical key (the normalised title) if it
+        matches a lookup title/alias; otherwise just the normalised text."""
+        key = _normalize_key(text)
+        return self.alias_map.get(key, key)
 
     def lookup(self, key: str) -> Optional[LookupEntry]:
-        return self.lookups.get(key.lower())
+        """Finds the entry for a canonical key or any of its aliases."""
+        canonical = self.alias_map.get(_normalize_key(key))
+        return self.lookups.get(canonical) if canonical else None
 
 
 class SoundEffects:
@@ -465,6 +552,28 @@ class VotingCog(commands.Cog, name="Voting"):
             return f"[{entry.title}]({entry.url})"
         return entry.title
 
+    def _canonical_votes(self, votes: List[str]) -> List[str]:
+        """Maps each typed vote to its canonical key (so aliases and the
+        title itself all become one nominee) and drops repeats, keeping the
+        first occurrence -- someone who lists both "zomboid" and "project
+        zomboid" only counts once, at their higher position."""
+        result: List[str] = []
+        for vote in votes:
+            canonical = self.config.resolve(vote)
+            if canonical and canonical not in result:
+                result.append(canonical)
+        return result
+
+    def _load_history(self, guild_id: int) -> Dict[str, int]:
+        """Loads the runner-up history with keys canonicalised, so entries
+        saved under an old alias fold into the entry's current key (the
+        larger streak wins if both exist)."""
+        merged: Dict[str, int] = {}
+        for key, streak in self.history.load(guild_id).items():
+            canonical = self.config.resolve(key)
+            merged[canonical] = max(merged.get(canonical, 0), streak)
+        return merged
+
     async def _reply_payload(self, ctx: commands.Context, payload: Union[str, discord.Embed]) -> None:
         if isinstance(payload, discord.Embed):
             await ctx.reply(embed=payload, mention_author=False)
@@ -514,7 +623,9 @@ class VotingCog(commands.Cog, name="Voting"):
         description = f"Tracking voice channel: **{session.voice_channel.name}**"
         if not finished:
             if session.runoff_options:
-                description += "\nTie-breaker between: " + ", ".join(session.runoff_options)
+                description += "\nTie-breaker between: " + ", ".join(
+                    self._display_nominee(o) for o in session.runoff_options
+                )
             if session.include_history:
                 description += "\n📜 Runners-up bonus included this round."
 
@@ -607,13 +718,10 @@ class VotingCog(commands.Cog, name="Voting"):
 
     def _format_prompt(self, session: VoteSession) -> str:
         if session.runoff_options:
-            options_list = "\n".join(
-                f"- {opt}" + (f" — {title}" if (title := self._display_nominee(opt)) != opt else "")
-                for opt in session.runoff_options
-            )
+            options_list = "\n".join(f"- {self._display_nominee(opt)}" for opt in session.runoff_options)
             return (
                 f"🤝 Tie-breaker vote for **#{session.voice_channel.name}**!\n\n"
-                f"Rank these in order of preference (top pick first), using the key on the left:\n{options_list}\n\n"
+                f"Rank these in order of preference (top pick first), typing each name as shown:\n{options_list}\n\n"
                 "One per line. Leading numbers/letters followed by a full stop or "
                 "bracket (like \"1)\" or \"a.\") are ignored.\n\n"
                 "Don't want to vote? Tap the Abstain button below."
@@ -643,7 +751,9 @@ class VotingCog(commands.Cog, name="Voting"):
         for p in session.participants.values():
             if p.status != "voted":
                 continue
-            for i, nominee in enumerate(p.votes[:3]):
+            # Re-resolved here (not just when the vote was cast) so an alias
+            # added to the config mid-vote still merges correctly.
+            for i, nominee in enumerate(self._canonical_votes(p.votes)[:3]):
                 points[nominee] = points.get(nominee, 0) + _WEIGHTS[i]
 
         if session.include_history and session.history_snapshot:
@@ -658,7 +768,7 @@ class VotingCog(commands.Cog, name="Voting"):
         """Bump runner-up streaks for everyone who got votes but didn't win.
         Nominees not present in `points` (nobody voted for them this round)
         are left untouched. The winner's streak, if any, is cleared."""
-        history = self.history.load(guild_id)
+        history = self._load_history(guild_id)
         for nominee in points:
             if nominee == winner:
                 history.pop(nominee, None)
@@ -674,7 +784,7 @@ class VotingCog(commands.Cog, name="Voting"):
         The tied nominees themselves are left alone; they're still live and
         get resolved (bumped or cleared) once the tie-break concludes."""
         still_live = set(tied)
-        history = self.history.load(guild_id)
+        history = self._load_history(guild_id)
         changed = False
         for nominee in points:
             if nominee in still_live:
@@ -871,7 +981,7 @@ class VotingCog(commands.Cog, name="Voting"):
             return
 
         self.config.reload()
-        history = self.history.load(guild_id)
+        history = self._load_history(guild_id)
         session.include_history = True
         session.history_snapshot = history
 
@@ -1037,8 +1147,7 @@ class VotingCog(commands.Cog, name="Voting"):
         content = message.content.strip()
 
         raw_lines = [line.strip() for line in content.splitlines() if line.strip()]
-        parsed = [_strip_enumeration(line).lower() for line in raw_lines[:3]]
-        parsed = [p for p in parsed if p]
+        parsed = self._canonical_votes([_strip_enumeration(line) for line in raw_lines[:3]])
 
         if session.runoff_options:
             valid = set(session.runoff_options)
@@ -1060,7 +1169,8 @@ class VotingCog(commands.Cog, name="Voting"):
 
         participant.votes = parsed
         participant.status = "voted"
-        await message.channel.send(f"Vote recorded: {', '.join(parsed)}. Thanks!")
+        shown = ', '.join(self._display_nominee(p) for p in parsed)
+        await message.channel.send(f"Vote recorded: {shown}. Thanks!")
         await self._update_tracking_message(session)
 
 

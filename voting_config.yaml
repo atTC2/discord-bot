@@ -30,158 +30,127 @@ features:
   # out of that one. Lowering this value avoids the deadlock.
   min_votes_to_end: 3
 
-# Lookup table: short vote keys -> full title (+ optional web link).
-# People still vote using the short key (e.g. "oam") - results, the tie
-# announcement, and the runner-up history list all show the full title
-# instead, as a clickable link whenever a url is given.
+
+# Lookup table: one entry per thing people might vote for.
 #
-# Use an ordinary http(s) page here (a store page, a Spotify track, a
+#   title    - the display name (required). Typing the title in a vote (any
+#              capitalisation) also counts as a vote for this entry.
+#   url      - optional web link; the title becomes a clickable link.
+#   aliases  - optional list of other things people might type. A vote for
+#              any alias is counted as a vote for this entry, so "zomboid"
+#              and "project zomboid" combine into ONE nominee with one
+#              score, one runner-up streak and one link.
+#
+# Matching ignores capitalisation and extra spaces. Entries with no match
+# just show as typed, with no link. If the same alias appears under two
+# entries, the first one wins (and a title always beats another entry's
+# alias).
+#
+# Use an ordinary http(s) page for url (a store page, a Spotify track, a
 # YouTube video...) rather than an app-specific protocol like steam:// -
 # Discord no longer renders custom protocols as clickable links at all,
 # but a plain web link works everywhere, and most of these pages show
 # their own "Play"/"Launch" button once you're signed in anyway.
-#
-# url is optional; omit it for a plain title with no link.
+ 
 lookups:
-  oam:
-    title: "Age of Mythology"
-    url: "https://store.steampowered.com/app/266840/Age_of_Mythology_Extended_Edition/"
-
-  # --- Generated from games.yaml (enabled games only). Key = the full
-  # --- title in lowercase, since that's how votes are matched.
-  "earth defense force 6":
-    title: "Earth Defense Force 6"
+  - title: "Earth Defense Force 6"
     url: "https://store.steampowered.com/app/2291060"
-  "satisfactory":
-    title: "Satisfactory"
+    aliases:
+      - "edf6"
+  - title: "Satisfactory"
     url: "https://store.steampowered.com/app/526870"
-  "grand theft auto v":
-    title: "Grand Theft Auto V"
+  - title: "Grand Theft Auto V"
     url: "https://store.steampowered.com/app/271590"
-  "counter-strike 2":
-    title: "Counter-Strike 2"
+  - title: "Counter-Strike 2"
     url: "https://store.steampowered.com/app/730"
-  "minecraft":
-    title: "Minecraft"
+    aliases:
+      - "cs2"
+  - title: "Minecraft"
     url: "https://www.minecraft.net/"
-  "space engineers":
-    title: "Space Engineers"
+  - title: "Space Engineers"
     url: "https://store.steampowered.com/app/244850"
-  "factorio":
-    title: "Factorio"
+  - title: "Factorio"
     url: "https://store.steampowered.com/app/427520"
-  "helldivers 2":
-    title: "Helldivers 2"
+  - title: "Helldivers 2"
     url: "https://store.steampowered.com/app/553850"
-  "deep rock galactic":
-    title: "Deep Rock Galactic"
+  - title: "Deep Rock Galactic"
     url: "https://store.steampowered.com/app/548430"
-  "vampire survivors":
-    title: "Vampire Survivors"
+    aliases:
+      - "drg"
+  - title: "Vampire Survivors"
     url: "https://store.steampowered.com/app/1794680"
-  "vampire: the masquerade - bloodhunt":
-    title: "Vampire: The Masquerade - Bloodhunt"
+  - title: "Vampire: The Masquerade - Bloodhunt"
     url: "https://store.steampowered.com/app/760160"
-  "project zomboid":
-    title: "Project Zomboid"
+  - title: "Project Zomboid"
     url: "https://store.steampowered.com/app/108600"
-  "left 4 dead 2":
-    title: "Left 4 Dead 2"
+    aliases:
+      - "zomboid"
+  - title: "Left 4 Dead 2"
     url: "https://store.steampowered.com/app/550"
-  "ultimate chicken horse":
-    title: "Ultimate Chicken Horse"
+    aliases:
+      - "l4d2"
+  - title: "Ultimate Chicken Horse"
     url: "https://store.steampowered.com/app/386940"
-  "overcooked!":
-    title: "Overcooked!"
+  - title: "Overcooked!"
     url: "https://store.steampowered.com/app/448510"
-  "overcooked! 2":
-    title: "Overcooked! 2"
+  - title: "Overcooked! 2"
     url: "https://store.steampowered.com/app/728880"
-  "unrailed! 2: back on track":
-    title: "Unrailed! 2: Back on Track"
+  - title: "Unrailed! 2: Back on Track"
     url: "https://store.steampowered.com/app/2211170"
-  "slapshot: rebound":
-    title: "Slapshot: Rebound"
+    aliases:
+     - "unrailed 2"
+     - "unrailed! 2"
+     - "unrailed 2: back on track"
+  - title: "Slapshot: Rebound"
     url: "https://store.steampowered.com/app/1173370"
-  "rocket league":
-    title: "Rocket League"
+  - title: "Rocket League"
     url: "https://www.rocketleague.com/"
-  "tabletop simulator":
-    title: "Tabletop Simulator"
+  - title: "Tabletop Simulator"
     url: "https://store.steampowered.com/app/286160"
-  "geoguessr":
-    title: "GeoGuessr"
+  - title: "GeoGuessr"
     url: "https://www.geoguessr.com/"
-  "mount your friends":
-    title: "Mount Your Friends"
+  - title: "Mount Your Friends"
     url: "https://store.steampowered.com/app/296470/Mount_Your_Friends/"
-  "worms w.m.d":
-    title: "Worms W.M.D"
+  - title: "Worms W.M.D"
     url: "https://store.steampowered.com/app/327030"
-  "golf with your friends":
-    title: "Golf With Your Friends"
+  - title: "Golf With Your Friends"
     url: "https://store.steampowered.com/app/431240"
-  "peak":
-    title: "PEAK"
+  - title: "PEAK"
     url: "https://store.steampowered.com/app/3527290"
-  "zeepkist":
-    title: "Zeepkist"
+  - title: "Zeepkist"
     url: "https://store.steampowered.com/app/1440670"
-  "meccha chameleon":
-    title: "Meccha Chameleon"
+  - title: "Meccha Chameleon"
     url: "https://store.steampowered.com/app/4704690"
-  "northgard":
-    title: "Northgard"
+  - title: "Northgard"
     url: "https://store.steampowered.com/app/466560"
-  "age of empires iii: definitive edition":
-    title: "Age of Empires III: Definitive Edition"
+  - title: "Age of Empires III: Definitive Edition"
     url: "https://store.steampowered.com/app/933110"
-  "age of mythology: retold":
-    title: "Age of Mythology: Retold"
-    url: "https://store.steampowered.com/app/1934680"
-  "cossacks 3":
-    title: "Cossacks 3"
+    aliases:
+      - "aoe3"
+  - title: "Age of Mythology"
+    url: "https://store.steampowered.com/app/266840/Age_of_Mythology_Extended_Edition/"
+    aliases:
+      - "aom"
+  - title: "Cossacks 3"
     url: "https://store.steampowered.com/app/333420"
-  "halo wars: definitive edition":
-    title: "Halo Wars: Definitive Edition"
+  - title: "Halo Wars: Definitive Edition"
     url: "https://store.steampowered.com/app/459220"
-  "planetary annihilation: titans":
-    title: "Planetary Annihilation: TITANS"
+    aliases:
+      - "halo wars"
+  - title: "Planetary Annihilation: TITANS"
     url: "https://store.steampowered.com/app/386070"
-  "rise of nations: extended edition":
-    title: "Rise of Nations: Extended Edition"
+  - title: "PUBG: BATTLEGROUNDS"
+    url: "https://store.steampowered.com/app/578080"
+    aliases:
+      - "PUBG"
+      - "Playerunknown's battlegrounds"
+  - title: "Pummel Party"
+    url: "https://store.steampowered.com/app/880940/Pummel_Party/"
+  - title: "Rise of Nations: Extended Edition"
     url: "https://store.steampowered.com/app/287450"
-  "rusted warfare":
-    title: "Rusted Warfare"
+  - title: "Rusted Warfare"
     url: "https://store.steampowered.com/app/647960"
-  "stronghold 2":
-    title: "Stronghold 2"
+  - title: "Stronghold 2"
     url: "https://store.steampowered.com/app/40960"
-  "warzone 2100":
-    title: "Warzone 2100"
+  - title: "Warzone 2100"
     url: "https://wz2100.net/"
-
-  # --- Shorthand keys (same games, shorter to type). Each is a separate
-  # --- nominee when voted for, so votes for 'zomboid' and
-  # --- 'project zomboid' are NOT combined.
-  "zomboid":
-    title: "Project Zomboid"
-    url: "https://store.steampowered.com/app/108600"
-  "l4d2":
-    title: "Left 4 Dead 2"
-    url: "https://store.steampowered.com/app/550"
-  "cs2":
-    title: "Counter-Strike 2"
-    url: "https://store.steampowered.com/app/730"
-  "drg":
-    title: "Deep Rock Galactic"
-    url: "https://store.steampowered.com/app/548430"
-  "edf6":
-    title: "Earth Defense Force 6"
-    url: "https://store.steampowered.com/app/2291060"
-  "aoe3":
-    title: "Age of Empires III: Definitive Edition"
-    url: "https://store.steampowered.com/app/933110"
-  "aom":
-    title: "Age of Mythology: Retold"
-    url: "https://store.steampowered.com/app/1934680"

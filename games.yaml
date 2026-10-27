@@ -120,11 +120,25 @@ games:
     disabled: false
 
   # --- Party games ---
+  - title: "Pummel Party"
+    url: "https://store.steampowered.com/app/880940/Pummel_Party/"
+    mac_compatible: false
+    remote_play: true
+    low_effort: true
+    genre: party
+    disabled: false
   - title: "Left 4 Dead 2"
     url: "https://store.steampowered.com/app/550"
     mac_compatible: false
     remote_play: false
     low_effort: true
+    genre: [shooter, coop]
+    disabled: false
+  - title: "PUBG: BATTLEGROUNDS"
+    url: "https://store.steampowered.com/app/578080"
+    mac_compatible: false
+    remote_play: false
+    low_effort: false
     genre: [shooter, coop]
     disabled: false
   - title: "Ultimate Chicken Horse"
