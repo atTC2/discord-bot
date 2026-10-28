@@ -334,22 +334,22 @@ games:
     disabled: true
 
 players:
-  - name: "bear of polar"
+  - name: "Tom"
     discord_id: 182203903553568768
     dislikes: 
       - Earth Defense Force 6
-  - name: "12 loose screws and a bearing"
+  - name: "Row"
     discord_id: 182207543291019264
     dislikes:
       - Satisfactory
-  - name: "Ramecon"
+  - name: "Cam"
     discord_id: 227536127375048706
     dislikes:
       - Counter-Strike 2
-  - name: "Best Ben"
+  - name: "Ben"
     discord_id: 331757062411255810
     dislikes:
       - Astroneer
-  - name: "hyperfocused beeman"
+  - name: "Gareth"
     discord_id: 500002362023477248
     dislikes: []
