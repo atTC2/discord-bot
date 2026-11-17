@@ -47,25 +47,37 @@ Voting (via DM to the bot):
 
 Scoring: 1st line = 3 points, 2nd line = 2 points, 3rd line = 1 point.
 
-Runners-up history:
-    Whenever a round ends with a single winner, every other nominee that
-    actually received votes that round has its "runner-up streak" bumped by
-    1 in a per-guild JSON file on disk (data/vote_history/<guild_id>.json).
-    The winner's streak (if any) is cleared.
+Runners-up history (kept PER PLAYER):
+    Each player has their own streak counter per nominee, stored in a
+    per-guild JSON file (data/vote_history/<guild_id>.json, human-readable,
+    with each player's name alongside their id).
 
-    If a round ends in a tie instead, anyone who got votes but wasn't part
-    of the tie has already lost outright, so their streak is bumped right
-    then -- otherwise those first-round votes would be lost once the
-    tie-break narrows the field down to just the tied nominees. The tied
-    nominees themselves stay untouched until the tie-break resolves (bumped
-    if they lose it, cleared if they win it, or bumped again if it ties yet
-    again).
+    When a round ends with a single winner: for every player in the vote,
+    each nominee THEY voted for that didn't win gets +1 on THEIR counter.
+    The winner's counter is then cleared for everyone involved in the vote
+    (anyone who was in the room, whether they voted, abstained or never
+    responded) -- players who weren't part of the vote keep their counters.
 
-    Clicking "Include Previous Runners-Up" on a live vote loads that file,
-    posts its contents as a reply to the live-updating message, and, for
-    this round only, adds each nominee's streak as bonus points on top of
-    their normal score -- but only for nominees someone actually votes for
-    this round. Nominees nobody votes for are left untouched either way.
+    If a round ties instead: whatever a player voted for that isn't in the
+    tie has already lost outright, so their counter is bumped right then
+    (otherwise those first-round votes would be forgotten once the
+    tie-break narrows the field). Their votes for the tied nominees are
+    carried over and settled when the tie-break concludes -- bumped if they
+    lose it, cleared if they win it, or carried again if it ties yet again.
+
+    Clicking "Include Previous Runners-Up" on a live vote posts each
+    current player's streaks as a reply to the live-updating message and
+    switches on the bonus for this vote (the message footer always says
+    whether it's "included" or "not included"). When the votes are tallied,
+    each nominee gets a bonus equal to the summed streaks for it across
+    every player who has actually VOTED -- abstainers and people who haven't
+    responded contribute nothing. A player's streak counts toward a nominee
+    whether or not that player picked it this time, but only nominees that
+    at least one person voted for receive a bonus; nominees nobody picked
+    are left alone. The bonus applies through any tie-break of the same vote.
+
+    Older history files (a single global counter, which can't be attributed
+    to players) are copied to <guild_id>.legacy.json and then ignored.
 
 !start_vote requires at least features.min_participants_to_start people in
 the voice channel (default 3 -- below that, a vote doesn't add much over
@@ -474,7 +486,19 @@ class SoundEffects:
 
 
 class HistoryStore:
-    """Tiny per-guild JSON store of {nominee: consecutive_runner_up_rounds}."""
+    """Per-guild JSON store of each player's runner-up streaks:
+
+        {"version": 2,
+         "players": {"<discord id>": {"name": "...",
+                                       "streaks": {"<nominee>": <count>}}}}
+
+    A streak counts how many times that player voted for that nominee in a
+    round it didn't win. (The player's name is only there so the file is
+    readable by a human.) Files from the older global format (a flat
+    {nominee: count} map that can't be attributed to players) are copied to
+    <guild_id>.legacy.json and then ignored."""
+
+    VERSION = 2
 
     def __init__(self, directory: Path):
         self.directory = directory
@@ -483,19 +507,32 @@ class HistoryStore:
     def _path(self, guild_id: int) -> Path:
         return self.directory / f"{guild_id}.json"
 
-    def load(self, guild_id: int) -> Dict[str, int]:
+    def load(self, guild_id: int) -> Dict[str, dict]:
         path = self._path(guild_id)
         if not path.exists():
             return {}
         try:
             with path.open("r", encoding="utf-8") as f:
-                return json.load(f)
+                data = json.load(f)
         except (json.JSONDecodeError, OSError):
             return {}
 
-    def save(self, guild_id: int, data: Dict[str, int]) -> None:
+        if isinstance(data, dict) and data.get("version") == self.VERSION:
+            players = data.get("players")
+            return players if isinstance(players, dict) else {}
+
+        # Older global format: keep a backup, start fresh per-player.
+        backup = self.directory / f"{guild_id}.legacy.json"
+        if not backup.exists():
+            try:
+                backup.write_bytes(path.read_bytes())
+            except OSError:
+                pass
+        return {}
+
+    def save(self, guild_id: int, players: Dict[str, dict]) -> None:
         with self._path(guild_id).open("w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, sort_keys=True)
+            json.dump({"version": self.VERSION, "players": players}, f, indent=2, sort_keys=True, ensure_ascii=False)
 
 
 @dataclass
@@ -517,7 +554,9 @@ class VoteSession:
     runoff_options: Optional[List[str]] = None
     # Whether "Include Previous Runners-Up" has been used this round.
     include_history: bool = False
-    history_snapshot: Dict[str, int] = field(default_factory=dict)
+    # Per player id: nominees they voted for that were still alive in a tie
+    # (so not yet counted as losses). Resolved when the tie-break concludes.
+    tie_carryover: Dict[int, set] = field(default_factory=dict)
 
 
 class VotingCog(commands.Cog, name="Voting"):
@@ -564,15 +603,32 @@ class VotingCog(commands.Cog, name="Voting"):
                 result.append(canonical)
         return result
 
-    def _load_history(self, guild_id: int) -> Dict[str, int]:
-        """Loads the runner-up history with keys canonicalised, so entries
-        saved under an old alias fold into the entry's current key (the
-        larger streak wins if both exist)."""
-        merged: Dict[str, int] = {}
-        for key, streak in self.history.load(guild_id).items():
-            canonical = self.config.resolve(key)
-            merged[canonical] = max(merged.get(canonical, 0), streak)
-        return merged
+    def _load_history(self, guild_id: int) -> Dict[str, dict]:
+        """Loads per-player runner-up history, {player_id: {"name": str,
+        "streaks": {nominee: n}}}, with nominee keys canonicalised so
+        entries saved under an old alias fold into the entry's current key
+        (the larger streak wins if both exist)."""
+        result: Dict[str, dict] = {}
+        for pid, info in self.history.load(guild_id).items():
+            if not isinstance(info, dict):
+                continue
+            streaks: Dict[str, int] = {}
+            for key, count in (info.get("streaks") or {}).items():
+                try:
+                    count = int(count)
+                except (TypeError, ValueError):
+                    continue
+                canonical = self.config.resolve(key)
+                streaks[canonical] = max(streaks.get(canonical, 0), count)
+            result[str(pid)] = {"name": info.get("name", str(pid)), "streaks": streaks}
+        return result
+
+    def _voted_nominees(self, participant: Participant) -> List[str]:
+        """The canonical nominees this participant actually voted for (their
+        top three), or none if they abstained / haven't responded."""
+        if participant.status != "voted":
+            return []
+        return self._canonical_votes(participant.votes)[:3]
 
     async def _reply_payload(self, ctx: commands.Context, payload: Union[str, discord.Embed]) -> None:
         if isinstance(payload, discord.Embed):
@@ -626,8 +682,6 @@ class VotingCog(commands.Cog, name="Voting"):
                 description += "\nTie-breaker between: " + ", ".join(
                     self._display_nominee(o) for o in session.runoff_options
                 )
-            if session.include_history:
-                description += "\n📜 Runners-up bonus included this round."
 
         embed = discord.Embed(title=title, description=description, color=color)
 
@@ -654,7 +708,12 @@ class VotingCog(commands.Cog, name="Voting"):
                 votes_part = f"{votes_cast}/{self.config.min_votes_to_end} votes to end vote"
             else:
                 votes_part = "no votes required to end vote"
-            embed.set_footer(text=f"{votes_part} • {responded}/{total} responded")
+            history_part = (
+                "📜 Previous runners-up: included"
+                if session.include_history
+                else "📜 Previous runners-up: not included"
+            )
+            embed.set_footer(text=f"{votes_part} • {responded}/{total} responded\n{history_part}")
 
         return embed
 
@@ -756,43 +815,70 @@ class VotingCog(commands.Cog, name="Voting"):
             for i, nominee in enumerate(self._canonical_votes(p.votes)[:3]):
                 points[nominee] = points.get(nominee, 0) + _WEIGHTS[i]
 
-        if session.include_history and session.history_snapshot:
-            for nominee in points:
-                bonus = session.history_snapshot.get(nominee, 0)
+        if session.include_history and points:
+            # Bonus = the summed streaks, for that nominee, of every player
+            # who has actually voted this round (abstainers and people who
+            # haven't responded contribute nothing). It only goes to
+            # nominees someone voted for, so nominees nobody picked this
+            # round are left alone.
+            history = self._load_history(session.guild_id)
+            voter_ids = [str(uid) for uid, p in session.participants.items() if p.status == "voted"]
+            for nominee in list(points):
+                bonus = sum(history.get(pid, {}).get("streaks", {}).get(nominee, 0) for pid in voter_ids)
                 if bonus:
                     points[nominee] += bonus
 
         return points
 
-    def _update_history(self, guild_id: int, points: Dict[str, int], winner: str) -> None:
-        """Bump runner-up streaks for everyone who got votes but didn't win.
-        Nominees not present in `points` (nobody voted for them this round)
-        are left untouched. The winner's streak, if any, is cleared."""
-        history = self._load_history(guild_id)
-        for nominee in points:
-            if nominee == winner:
-                history.pop(nominee, None)
-            else:
-                history[nominee] = history.get(nominee, 0) + 1
-        self.history.save(guild_id, history)
+    def _streaks_for(self, history: Dict[str, dict], participant_id: int, participant: Participant) -> Dict[str, int]:
+        entry = history.setdefault(str(participant_id), {"name": "", "streaks": {}})
+        entry["name"] = participant.member.display_name
+        return entry["streaks"]
 
-    def _bump_non_tied(self, guild_id: int, points: Dict[str, int], tied: List[str]) -> None:
-        """Called the moment a tie is detected. Everyone who got votes this
-        round but isn't part of the tie has already lost outright, so their
-        streak bumps by 1 now -- otherwise that round's votes would be lost
-        once the tie-break narrows things down to just the tied nominees.
-        The tied nominees themselves are left alone; they're still live and
-        get resolved (bumped or cleared) once the tie-break concludes."""
-        still_live = set(tied)
-        history = self._load_history(guild_id)
-        changed = False
-        for nominee in points:
-            if nominee in still_live:
+    def _save_history(self, guild_id: int, history: Dict[str, dict]) -> None:
+        # Don't keep players who have no streaks at all.
+        self.history.save(guild_id, {pid: e for pid, e in history.items() if e.get("streaks")})
+
+    def _update_history(self, session: VoteSession, winner: str) -> None:
+        """Called once a round has a single winner. For each player in the
+        vote: every nominee they voted for (including ones carried over from
+        an earlier tied round) that didn't win gets +1 on THEIR streak
+        counter. The winner's streak is then cleared for everyone involved
+        in the vote (anyone in the room, whether they voted, abstained or
+        didn't respond). Players who weren't part of the vote are untouched."""
+        history = self._load_history(session.guild_id)
+        for uid, participant in session.participants.items():
+            streaks = self._streaks_for(history, uid, participant)
+            voted_for = set(self._voted_nominees(participant)) | session.tie_carryover.get(uid, set())
+            for nominee in voted_for:
+                if nominee != winner:
+                    streaks[nominee] = streaks.get(nominee, 0) + 1
+            streaks.pop(winner, None)
+        session.tie_carryover = {}
+        self._save_history(session.guild_id, history)
+
+    def _record_tie(self, session: VoteSession, tied: List[str]) -> None:
+        """Called the moment a tie is detected, before the tie-break resets
+        everyone's votes. Anything a player voted for that isn't in the tie
+        has lost outright, so it gets +1 on their streak right now --
+        otherwise those votes would be forgotten once the tie-break narrows
+        things down. Their votes for tied nominees are carried over and
+        settled when the tie-break concludes (or ties again)."""
+        tied_set = set(tied)
+        history = self._load_history(session.guild_id)
+        carryover: Dict[int, set] = {}
+        for uid, participant in session.participants.items():
+            candidates = set(self._voted_nominees(participant)) | session.tie_carryover.get(uid, set())
+            if not candidates:
                 continue
-            history[nominee] = history.get(nominee, 0) + 1
-            changed = True
-        if changed:
-            self.history.save(guild_id, history)
+            streaks = self._streaks_for(history, uid, participant)
+            for nominee in candidates - tied_set:
+                streaks[nominee] = streaks.get(nominee, 0) + 1
+            still_live = candidates & tied_set
+            if still_live:
+                carryover[uid] = still_live
+        session.tie_carryover = carryover
+        self._save_history(session.guild_id, history)
 
     async def _finish_session(self, guild: discord.Guild, session: VoteSession, cancelled: bool = False):
         await self._update_tracking_message(session, finished=True, cancelled=cancelled)
@@ -863,11 +949,11 @@ class VotingCog(commands.Cog, name="Voting"):
         winners = [name for name, score in ranked if score == top_score]
 
         if len(winners) > 1:
-            self._bump_non_tied(guild.id, points, winners)
+            self._record_tie(session, winners)
             await self._start_runoff(session, winners, send_result)
             return None
 
-        self._update_history(guild.id, points, winners[0])
+        self._update_history(session, winners[0])
 
         winner_display = self._display_nominee(winners[0], as_markdown_link=True)
         points_text = "\n".join(
@@ -969,6 +1055,28 @@ class VotingCog(commands.Cog, name="Voting"):
 
         await interaction.followup.send(summary, ephemeral=True)
 
+    def _history_rows(self, session: VoteSession, history: Dict[str, dict]) -> List[tuple]:
+        """(player name, formatted streaks) for each current participant who
+        has any history, highest streaks first. Values are kept under the
+        1024-character embed field limit."""
+        rows = []
+        for uid, participant in session.participants.items():
+            streaks = history.get(str(uid), {}).get("streaks", {})
+            if not streaks:
+                continue
+            ranked = sorted(streaks.items(), key=lambda kv: (-kv[1], kv[0]))
+            lines: List[str] = []
+            length = 0
+            for i, (nominee, count) in enumerate(ranked):
+                line = f"{self._display_nominee(nominee, as_markdown_link=True)} — +{count}"
+                if length + len(line) + 1 > 950:
+                    lines.append(f"…and {len(ranked) - i} more")
+                    break
+                lines.append(line)
+                length += len(line) + 1
+            rows.append((participant.member.display_name, "\n".join(lines)))
+        return rows
+
     async def _on_include_history_button(self, interaction: discord.Interaction, guild_id: int):
         await interaction.response.defer(ephemeral=True)
 
@@ -977,31 +1085,32 @@ class VotingCog(commands.Cog, name="Voting"):
             await interaction.followup.send("This vote has already ended.", ephemeral=True)
             return
         if session.include_history:
-            await interaction.followup.send("Runners-up history is already included this round.", ephemeral=True)
+            await interaction.followup.send("Previous runners-up are already included this round.", ephemeral=True)
             return
 
         self.config.reload()
         history = self._load_history(guild_id)
         session.include_history = True
-        session.history_snapshot = history
 
-        if history:
-            ranked_history = sorted(history.items(), key=lambda kv: kv[1], reverse=True)
-            medals = ["🥇", "🥈", "🥉"]
-            lines = []
-            for i, (name, streak) in enumerate(ranked_history):
-                prefix = medals[i] if i < len(medals) else "•"
-                lines.append(f"{prefix} {self._display_nominee(name, as_markdown_link=True)} — +{streak}")
+        player_rows = self._history_rows(session, history)
+        if player_rows:
             embed = discord.Embed(
-                title="📜 Runners-up history",
-                description="Bonus only applies if voted for this round.",
+                title="📜 Previous runners-up",
+                description=(
+                    "Each player's past picks that didn't win. When the vote ends, the streaks "
+                    "of everyone who has **voted** are added as bonus points to the nominees "
+                    "that got votes (abstainers and non-responders are ignored)."
+                ),
                 color=discord.Color.blurple(),
             )
-            embed.add_field(name="Streaks", value="\n".join(lines), inline=False)
+            for name, value in player_rows[:25]:
+                embed.add_field(name=name, value=value, inline=False)
+            if len(player_rows) > 25:
+                embed.set_footer(text=f"…and {len(player_rows) - 25} more players")
         else:
             embed = discord.Embed(
-                title="📜 Runners-up history",
-                description="No runners-up history yet for this server.",
+                title="📜 Previous runners-up",
+                description="No previous runners-up for anyone in this vote yet.",
                 color=discord.Color.blurple(),
             )
 
@@ -1014,7 +1123,7 @@ class VotingCog(commands.Cog, name="Voting"):
                 pass
 
         await self._update_tracking_message(session)
-        await interaction.followup.send("Runners-up history included for this round.", ephemeral=True)
+        await interaction.followup.send("Previous runners-up included for this round.", ephemeral=True)
 
     async def _on_abstain_button(self, interaction: discord.Interaction):
         session, participant = self._find_participant(interaction.user.id)
